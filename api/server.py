@@ -1,5 +1,6 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
+import os
 
 # app instance
 app = Flask(__name__)
@@ -13,7 +14,9 @@ def return_home():
     })
 
 
-# The block below is used for Development ONLY, comment it out when pushing to GitHub
-# To run locally use 'python server.py' and make sure the below block is un-commented
-# if __name__ == "__main__":
-#     app.run(debug=True, port=8080)
+# To run locally use 'python server.py'
+if __name__ == "__main__":
+    # Vercel sets the 'VERCEL' environment variable to '1' during deployment.
+    # We check if this variable is NOT set before starting the development server.
+    if os.environ.get('VERCEL') != '1':
+        app.run(debug=True, port=8080)
