@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/home",
+      "destination": "/api/server"
+    }
+  ]
+}
