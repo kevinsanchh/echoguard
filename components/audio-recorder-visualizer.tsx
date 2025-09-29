@@ -51,7 +51,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     audioContext: null,
   });
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationRef = useRef<any>(null);
+  const animationRef = useRef<number | null>(null);
 
   const sendAudioToBackend = async (audioBlob: Blob) => {
     const formData = new FormData();
