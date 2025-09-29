@@ -3,6 +3,10 @@
     {
       "source": "/api/home",
       "destination": "/api/server"
+    },
+    {
+      "source": "/api/audio-upload",
+      "destination": "/api/server"
     }
   ]
 }
