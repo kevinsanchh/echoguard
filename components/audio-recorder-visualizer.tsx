@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { CircleStop, Mic, Play, Pause, Trash } from "lucide-react"; // Added Play, Pause, Trash icons
+import { CircleStop, Mic, Play, Pause, Trash } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +11,7 @@ type Props = {
   timerClassName?: string;
 };
 
+// Global timeouts/intervals (managed by refs now for better cleanup)
 let timerTimeout: NodeJS.Timeout;
 
 // Utility function to pad a number with leading zeros
@@ -19,6 +20,9 @@ const padWithLeadingZeros = (num: number, length: number): string => {
 };
 
 type RecordingPhase = "idle" | "recording" | "review";
+
+// Configuration for backend audio clips
+const CLIP_DURATION_MS = 5000; // 5 seconds per clip
 
 export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props) => {
   const { theme } = useTheme();
@@ -31,31 +35,43 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   const [currentPlaybackTime, setCurrentPlaybackTime] = useState<number>(0);
   const [totalAudioDuration, setTotalAudioDuration] = useState<number>(0);
 
-  // Refs for MediaRecorder and AudioContext instances
+  // Refs for the primary MediaStream and its AudioContext/Analyser for LIVE visualization
   const mediaRecorderRef = useRef<{
     stream: MediaStream | null;
     analyser: AnalyserNode | null;
-    mediaRecorder: MediaRecorder | null;
+    // mediaRecorder: MediaRecorder | null; // Removed - no dedicated visualizer recorder needed
     audioContext: AudioContext | null; // For live recording analysis
   }>({
     stream: null,
     analyser: null,
-    mediaRecorder: null,
+    // mediaRecorder: null, // Removed
     audioContext: null,
   });
 
-  // Refs for collected audio chunks and playback
-  const allRecordedChunks = useRef<BlobPart[]>([]);
+  // Refs for backend continuous clipping
+  const backendClipRecorderRef = useRef<MediaRecorder | null>(null);
+  const backendClipChunks = useRef<BlobPart[]>([]); // Chunks for the CURRENT backend clip
+  const backendRecorderTimeoutId = useRef<NodeJS.Timeout | null>(null);
+
+  // *** NEW: Ref to store history of completed backend clips for frontend playback ***
+
   const audioRef = useRef<HTMLAudioElement | null>(null); // For playback
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const liveAnimationRef = useRef<number | null>(null); // For live recording waveform
   const reviewAnimationRef = useRef<number | null>(null); // For review waveform
-  const reviewAudioBufferRef = useRef<AudioBuffer | null>(null); // To store decoded audio buffer for review
 
   // Refs for review/playback analysis
   const playbackAudioContextRef = useRef<AudioContext | null>(null);
   const playbackSourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
   const playbackAnalyserRef = useRef<AnalyserNode | null>(null);
+  const reviewAudioBufferRef = useRef<AudioBuffer | null>(null); // To store decoded audio buffer for review
+
+  const latestRecordingPhase = useRef<RecordingPhase>("idle"); // To store the latest recordingPhase
+
+  // Sync latestRecordingPhase ref with recordingPhase state
+  useEffect(() => {
+    latestRecordingPhase.current = recordingPhase;
+  }, [recordingPhase]);
 
   // Calculate the hours, minutes, and seconds from the timer
   const hours = Math.floor(timer / 3600);
@@ -75,10 +91,14 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
 
   const sendAudioToBackend = async (audioBlob: Blob) => {
     const formData = new FormData();
-    formData.append("audio", audioBlob, `audio_${Date.now()}.wav`);
+    formData.append("audio", audioBlob, `audio_${Date.now()}.webm`); // Filename and type to match WebM
 
     try {
-      console.log("Attempting to send audio clip to /api/audio-upload");
+      console.log(
+        `Attempting to send audio clip (${(audioBlob.size / 1024).toFixed(
+          2
+        )} KB) to /api/audio-upload`
+      );
       const response = await fetch("/api/audio-upload", {
         method: "POST",
         body: formData,
@@ -96,6 +116,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
         try {
           const responseData = await response.json();
           console.log("Backend JSON response data:", responseData);
+          // TODO: Use backend response (e.g., prediction) here for future flags
         } catch (jsonError) {
           console.warn(
             "Could not parse JSON response from backend (might be empty or HTML from redirect).",
@@ -136,15 +157,167 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     }
   };
 
+  // Drawing utilities for the canvas (moved outside useEffect for access)
+  const drawLiveWaveform = (
+    canvasCtx: CanvasRenderingContext2D,
+    WIDTH: number,
+    HEIGHT: number,
+    dataArray: Uint8Array
+  ) => {
+    canvasCtx.clearRect(0, 0, WIDTH, HEIGHT);
+    canvasCtx.fillStyle = "#939393";
+
+    const barWidth = 1;
+    const spacing = 1;
+    const maxBarHeight = HEIGHT / 1.2;
+    const numBars = Math.floor(WIDTH / (barWidth + spacing));
+
+    for (let i = 0; i < numBars; i++) {
+      const dataIndex = Math.floor((i * dataArray.length) / numBars);
+      const barHeight = Math.pow(dataArray[dataIndex] / 128.0, 8) * maxBarHeight;
+      const x = (barWidth + spacing) * i;
+      const y = HEIGHT / 2 - barHeight / 2;
+      canvasCtx.fillRect(x, y, barWidth, barHeight);
+    }
+  };
+
+  const drawReviewWaveform = (
+    canvasCtx: CanvasRenderingContext2D,
+    WIDTH: number,
+    HEIGHT: number,
+    audioBuffer: AudioBuffer,
+    currentPlaybackTime: number = 0,
+    totalAudioDuration: number = 0
+  ) => {
+    canvasCtx.clearRect(0, 0, WIDTH, HEIGHT);
+    canvasCtx.fillStyle = "#939393"; // *** TEMPORARY: Use a very distinct color to force visibility ***
+
+    const barWidth = 2;
+    const barSpacing = 1;
+    const maxBarHeight = HEIGHT / 2.5;
+    const numBars = Math.floor(WIDTH / (barWidth + barSpacing));
+
+    const channelData = audioBuffer.getChannelData(0); // Use the first channel for waveform data
+
+    for (let i = 0; i < numBars; i++) {
+      const dataIndex = Math.floor(i * (channelData.length / numBars));
+      const amplitude = Math.abs(channelData[dataIndex]);
+
+      // *** MODIFICATION: More aggressive amplitude scaling for visibility ***
+      // Scale amplitude (0.0-1.0) to a more visually impactful range.
+      // Multiply by a factor (e.g., 5) to ensure even small amplitudes get boosted.
+      // Then apply power to shape, or just use linear scaling for initial test.
+      const scaledAmplitude = amplitude * 5; // Boost amplitude considerably
+      const barHeight = Math.min(HEIGHT, Math.max(0, scaledAmplitude * maxBarHeight)); // Clamp to canvas height, no power for now
+
+      const x = (barWidth + barSpacing) * i;
+      const y = HEIGHT / 2 - barHeight / 2;
+
+      canvasCtx.fillRect(x, y, barWidth, barHeight);
+    }
+
+    // --- Draw Playback Head (vertical line) ---
+    if (currentPlaybackTime > 0 && totalAudioDuration > 0) {
+      const playbackPositionX = (currentPlaybackTime / totalAudioDuration) * WIDTH;
+      canvasCtx.beginPath();
+      canvasCtx.strokeStyle = "red";
+      canvasCtx.lineWidth = 2;
+      canvasCtx.lineCap = "round";
+      canvasCtx.moveTo(playbackPositionX, 0);
+      canvasCtx.lineTo(playbackPositionX, HEIGHT);
+      canvasCtx.stroke();
+    }
+  };
+
+  // --- Backend Recorder Cycle Management ---
+  const _startBackendRecordingCycle = (stream: MediaStream) => {
+    _stopBackendRecordingCycle(); // Clean up any previous cycle's timeout or recorder instance
+
+    if (!stream.active) {
+      console.warn("Attempted to start backend recording cycle with an inactive stream. Skipping.");
+      return;
+    }
+
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mpeg";
+    const options = { mimeType };
+
+    backendClipRecorderRef.current = new MediaRecorder(stream, options);
+    backendClipChunks.current = []; // Reset chunks for the new clip
+
+    backendClipRecorderRef.current.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        backendClipChunks.current.push(e.data);
+      }
+    };
+
+    backendClipRecorderRef.current.onstop = async () => {
+      console.log(
+        `Backend clip recorder stopped. Chunks collected: ${backendClipChunks.current.length}`
+      );
+      if (backendClipChunks.current.length > 0) {
+        const fullClipBlob = new Blob(backendClipChunks.current, { type: mimeType });
+        await sendAudioToBackend(fullClipBlob);
+        // *** MODIFICATION: Removed line pushing to frontendPlaybackClipHistoryRef.current ***
+        // console.log(`Frontend playback history updated. Total clips: ${frontendPlaybackClipHistoryRef.current.length}`); // Log removed
+      }
+      if (latestRecordingPhase.current === "recording") {
+        console.log("Restarting backend recording cycle...");
+        _startBackendRecordingCycle(stream);
+      } else {
+        console.log(
+          "Not restarting backend recording cycle, latestRecordingPhase is not 'recording'. Current phase:",
+          latestRecordingPhase.current
+        );
+      }
+    };
+
+    backendClipRecorderRef.current.onerror = (event) => {
+      console.error("Backend MediaRecorder error:", event);
+      if (latestRecordingPhase.current === "recording") {
+        console.log("Restarting backend recording cycle due to error...");
+        _startBackendRecordingCycle(stream);
+      }
+    };
+
+    backendClipRecorderRef.current.start();
+    console.log(`Backend clip recorder started for ${CLIP_DURATION_MS / 1000} seconds.`);
+
+    backendRecorderTimeoutId.current = setTimeout(() => {
+      if (backendClipRecorderRef.current && backendClipRecorderRef.current.state === "recording") {
+        backendClipRecorderRef.current.stop();
+      }
+    }, CLIP_DURATION_MS);
+  };
+
+  const _stopBackendRecordingCycle = () => {
+    if (backendRecorderTimeoutId.current) {
+      clearTimeout(backendRecorderTimeoutId.current);
+      backendRecorderTimeoutId.current = null;
+    }
+    if (backendClipRecorderRef.current && backendClipRecorderRef.current.state === "recording") {
+      backendClipRecorderRef.current.stop();
+    }
+    if (backendClipRecorderRef.current) {
+      backendClipRecorderRef.current.onstop = null;
+      backendClipRecorderRef.current = null;
+    }
+    backendClipChunks.current = [];
+    console.log("Backend recording cycle explicitly stopped and cleaned up.");
+  };
+  // --- End Backend Recorder Cycle Management ---
+
   function startRecording() {
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       navigator.mediaDevices
         .getUserMedia({ audio: true })
         .then((stream) => {
           setRecordingPhase("recording");
-          setIsRecording(true); // Update isRecording for visualizer useEffect
+          setIsRecording(true);
           setTimer(0);
-          allRecordedChunks.current = []; // Clear previous chunks
+          // *** MODIFICATION: Clear previous final blob and history ***
+          setFinalAudioBlob(null); // Clear any previous stitched audio
+          // frontendPlaybackClipHistoryRef.current = []; // Removed - no longer managing history on frontend
+          console.log("startRecording: Initializing for new recording.");
 
           const AudioContext = window.AudioContext;
           const audioCtx = new AudioContext();
@@ -155,36 +328,27 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
           mediaRecorderRef.current = {
             stream,
             analyser,
-            mediaRecorder: null,
             audioContext: audioCtx,
           };
 
-          const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+          let mimeType = MediaRecorder.isTypeSupported("audio/webm")
             ? "audio/webm"
             : MediaRecorder.isTypeSupported("audio/mpeg")
             ? "audio/mpeg"
             : "audio/wav";
 
-          const options = { mimeType };
-          const mediaRecorder = new MediaRecorder(stream, options);
+          if (!MediaRecorder.isTypeSupported(mimeType)) {
+            console.error(
+              `CRITICAL: Browser does not support any known audio formats for MediaRecorder.`
+            );
+            alert("Your browser does not support any known audio formats for recording.");
+            setRecordingPhase("idle");
+            setIsRecording(false);
+            return;
+          }
+          console.log(`MediaRecorder for live visualizer will use MIME type: ${mimeType}`);
 
-          mediaRecorder.ondataavailable = async (e) => {
-            if (e.data.size > 0) {
-              allRecordedChunks.current.push(e.data); // Store for final playback
-              const audioBlob = new Blob([e.data], { type: mimeType });
-              await sendAudioToBackend(audioBlob);
-            }
-          };
-
-          mediaRecorder.onstop = () => {
-            console.log("MediaRecorder stopped.");
-            // This onstop is triggered when `mediaRecorder.stop()` is explicitly called
-            // No direct action here, as stopListening handles the state transition.
-          };
-
-          mediaRecorder.start(5000); // Start recording in 5-second slices (adjust to 30000 for 30s)
-
-          mediaRecorderRef.current.mediaRecorder = mediaRecorder;
+          _startBackendRecordingCycle(stream);
         })
         .catch((error) => {
           alert("Error accessing microphone: " + error.message);
@@ -199,12 +363,11 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     }
   }
 
-  function stopListening() {
-    const { mediaRecorder, stream, analyser, audioContext } = mediaRecorderRef.current;
+  async function stopListening() {
+    const { stream, analyser, audioContext } = mediaRecorderRef.current;
 
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-      mediaRecorder.stop();
-    }
+    _stopBackendRecordingCycle();
+
     if (stream) {
       stream.getTracks().forEach((track) => track.stop());
     }
@@ -221,72 +384,124 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     setIsRecording(false);
     clearTimeout(timerTimeout);
 
-    if (allRecordedChunks.current.length > 0) {
-      const mimeType =
-        allRecordedChunks.current[0] instanceof Blob
-          ? allRecordedChunks.current[0].type
-          : MediaRecorder.isTypeSupported("audio/webm")
-          ? "audio/webm"
-          : "audio/wav";
+    console.log("stopListening: Requesting combined audio from backend for playback.");
+    try {
+      const stitchResponse = await fetch("/api/stitch-and-return-audio", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
 
-      const fullBlob = new Blob(allRecordedChunks.current, { type: mimeType });
-      setFinalAudioBlob(fullBlob);
+      if (stitchResponse.ok) {
+        const data = await stitchResponse.json();
+        if (data.audioDataUri) {
+          console.log("stopListening: Received combined audio data URI from backend.");
+          const blob = await fetch(data.audioDataUri).then((res) => res.blob());
+          setFinalAudioBlob(blob);
 
-      const tempAudioContext = new window.AudioContext();
-      fullBlob
-        .arrayBuffer()
-        .then((buffer) => {
-          tempAudioContext
-            .decodeAudioData(buffer)
+          const tempAudioContext = new window.AudioContext();
+          blob
+            .arrayBuffer()
+            .then((buffer) => {
+              return tempAudioContext.decodeAudioData(buffer);
+            })
             .then((audioBuffer) => {
-              reviewAudioBufferRef.current = audioBuffer; // Store for later
-              setTotalAudioDuration(audioBuffer.duration); // Set total duration immediately
+              reviewAudioBufferRef.current = audioBuffer;
+              setTotalAudioDuration(audioBuffer.duration);
               tempAudioContext.close();
-              setRecordingPhase("review"); // Transition to review phase after duration is known
+              setRecordingPhase("review");
               console.log(
-                "stopListening: AudioBuffer decoded, duration set, transitioning to review. Buffer:",
-                reviewAudioBufferRef.current
-              ); // Debug log
+                "stopListening: AudioBuffer decoded from stitched backend audio, transitioning to review."
+              );
+              // *** NEW LOGS: Inspect AudioBuffer contents ***
+              console.log("AudioBuffer properties:", {
+                duration: audioBuffer.duration,
+                sampleRate: audioBuffer.sampleRate,
+                numberOfChannels: audioBuffer.numberOfChannels,
+                firstChannelDataLength: audioBuffer.getChannelData(0).length,
+                first5Samples: Array.from(audioBuffer.getChannelData(0).slice(0, 5)),
+              });
+              if (audioBuffer.getChannelData(0).some((sample) => sample !== 0)) {
+                console.log("AudioBuffer contains non-zero data (likely audible).");
+              } else {
+                console.warn("AudioBuffer contains only zero data (likely silent or corrupted).");
+              }
+              // *** END NEW LOGS ***
             })
             .catch((e) => {
-              console.error("stopListening: Error decoding audio for duration display:", e);
+              console.error(
+                "stopListening: Error decoding stitched audio for duration/waveform:",
+                e
+              );
               tempAudioContext.close();
               setTotalAudioDuration(0);
-              setRecordingPhase("review");
+              setRecordingPhase("idle");
+              setFinalAudioBlob(null);
+              reviewAudioBufferRef.current = null;
             });
-        })
-        .catch((e) => {
-          console.error("stopListening: Error reading audio blob for duration display:", e);
+        } else {
+          console.error(
+            "stopListening: Backend did not return audioDataUri in a successful response."
+          );
+          setRecordingPhase("idle");
           setTotalAudioDuration(0);
-          setRecordingPhase("review");
-        });
-    } else {
-      console.warn("stopListening: No audio chunks recorded to review.");
+          setFinalAudioBlob(null);
+          reviewAudioBufferRef.current = null;
+        }
+      } else {
+        const errorText = await stitchResponse.text();
+        let errorData = { message: errorText };
+
+        try {
+          const jsonError = JSON.parse(errorText);
+          errorData = jsonError;
+        } catch (e) {
+          // Not JSON
+        }
+
+        console.error(
+          "stopListening: Failed to get stitched audio from backend:",
+          stitchResponse.status,
+          stitchResponse.statusText,
+          errorData
+        );
+        setRecordingPhase("idle");
+        setTotalAudioDuration(0);
+        setFinalAudioBlob(null);
+        reviewAudioBufferRef.current = null;
+      }
+    } catch (error) {
+      console.error("stopListening: Network error requesting stitched audio:", error);
       setRecordingPhase("idle");
       setTotalAudioDuration(0);
+      setFinalAudioBlob(null);
+      reviewAudioBufferRef.current = null;
     }
 
     mediaRecorderRef.current = {
       stream: null,
       analyser: null,
-      mediaRecorder: null,
       audioContext: null,
     };
   }
 
   function discardRecording() {
+    console.log("Discarding recording.");
     // Stop any ongoing playback
     if (audioRef.current) {
       audioRef.current.pause();
+      if (audioRef.current.src) URL.revokeObjectURL(audioRef.current.src);
       audioRef.current.src = "";
     }
     setIsPlayingBack(false);
-    setCurrentPlaybackTime(0); // Reset current playback time
-    setTotalAudioDuration(0); // Reset total audio duration
+    setCurrentPlaybackTime(0);
+    setTotalAudioDuration(0);
 
     // Clear any previous recorded data
     setFinalAudioBlob(null);
-    allRecordedChunks.current = [];
+    // *** MODIFICATION: Removed frontendPlaybackClipHistoryRef.current = []; ***
     reviewAudioBufferRef.current = null;
 
     // Clear canvas
@@ -314,7 +529,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
       audioRef.current.onended = () => {
         console.log("togglePlayback: Audio playback ended.");
         setIsPlayingBack(false);
-        setCurrentPlaybackTime(0); // Reset to 0 when playback ends
+        setCurrentPlaybackTime(0);
         if (reviewAnimationRef.current) {
           cancelAnimationFrame(reviewAnimationRef.current);
           reviewAnimationRef.current = null;
@@ -333,14 +548,12 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
           playbackAudioContextRef.current = null;
         }
       };
-      // REMOVED: audioRef.current.ontimeupdate = ...
     }
 
-    // Always update audioRef.current.src here if it's not already set to the current blob
     if (!audioRef.current.src || audioRef.current.src !== URL.createObjectURL(finalAudioBlob)) {
-      if (audioRef.current.src) URL.revokeObjectURL(audioRef.current.src); // Clean up old URL if present
+      if (audioRef.current.src) URL.revokeObjectURL(audioRef.current.src);
       audioRef.current.src = URL.createObjectURL(finalAudioBlob);
-      audioRef.current.load(); // Load the new source
+      audioRef.current.load();
       console.log("togglePlayback: Set new audioRef.current.src and loaded.");
     }
 
@@ -385,7 +598,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
       }
 
       playbackSourceNodeRef.current = currentAudioContext.createBufferSource();
-      playbackSourceNodeRef.current.buffer = reviewAudioBufferRef.current; // Use the stored buffer
+      playbackSourceNodeRef.current.buffer = reviewAudioBufferRef.current;
       playbackSourceNodeRef.current.connect(currentAnalyser);
       currentAnalyser.connect(currentAudioContext.destination);
 
@@ -404,73 +617,6 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     }
   };
 
-  // Drawing utilities for the canvas
-  const drawLiveWaveform = (
-    canvasCtx: CanvasRenderingContext2D,
-    WIDTH: number,
-    HEIGHT: number,
-    dataArray: Uint8Array
-  ) => {
-    canvasCtx.clearRect(0, 0, WIDTH, HEIGHT);
-    canvasCtx.fillStyle = "#939393";
-
-    const barWidth = 1;
-    const spacing = 1;
-    const maxBarHeight = HEIGHT / 2.5;
-    const numBars = Math.floor(WIDTH / (barWidth + spacing));
-
-    for (let i = 0; i < numBars; i++) {
-      const dataIndex = Math.floor((i * dataArray.length) / numBars); // Downsample for drawing efficiency
-      const barHeight = Math.pow(dataArray[dataIndex] / 128.0, 8) * maxBarHeight;
-      const x = (barWidth + spacing) * i;
-      const y = HEIGHT / 2 - barHeight / 2;
-      canvasCtx.fillRect(x, y, barWidth, barHeight);
-    }
-  };
-
-  const drawReviewWaveform = (
-    canvasCtx: CanvasRenderingContext2D,
-    WIDTH: number,
-    HEIGHT: number,
-    audioBuffer: AudioBuffer,
-    currentPlaybackTime: number = 0, // New optional parameter
-    totalAudioDuration: number = 0 // New optional parameter
-  ) => {
-    canvasCtx.clearRect(0, 0, WIDTH, HEIGHT);
-    canvasCtx.strokeStyle = "#939393";
-    canvasCtx.lineWidth = 2;
-
-    const channelData = audioBuffer.getChannelData(0); // Use first channel for waveform
-
-    // Downsample for drawing efficiency, drawing more samples than pixels for detail
-    const samplesToDraw = WIDTH * 2;
-    const step = Math.floor(channelData.length / samplesToDraw);
-
-    canvasCtx.beginPath();
-    for (let i = 0; i < samplesToDraw; i++) {
-      const x = (i / samplesToDraw) * WIDTH;
-      // Normalize audio data from [-1, 1] to canvas y-coordinates [0, HEIGHT]
-      const y = (0.5 + channelData[i * step]) * HEIGHT;
-      if (i === 0) {
-        canvasCtx.moveTo(x, y);
-      } else {
-        canvasCtx.lineTo(x, y);
-      }
-    }
-    canvasCtx.stroke();
-
-    // --- Draw Playback Head (vertical line) ---
-    if (currentPlaybackTime > 0 && totalAudioDuration > 0) {
-      const playbackPositionX = (currentPlaybackTime / totalAudioDuration) * WIDTH;
-      canvasCtx.beginPath();
-      canvasCtx.strokeStyle = "#0084D1"; // Or any distinct color for the playback head
-      canvasCtx.lineWidth = 2;
-      canvasCtx.moveTo(playbackPositionX, 0);
-      canvasCtx.lineTo(playbackPositionX, HEIGHT);
-      canvasCtx.stroke();
-    }
-  };
-
   // Effect to update the timer every second
   useEffect(() => {
     if (recordingPhase === "recording") {
@@ -481,10 +627,6 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     return () => clearTimeout(timerTimeout);
   }, [recordingPhase, timer]);
 
-  // Visualizer Logic
-  // Visualizer
-  // Visualizer
-  // Visualizer
   // Visualizer
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -494,11 +636,12 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     const WIDTH = canvas.width;
     const HEIGHT = canvas.height;
 
-    if (!canvasCtx) return; // Ensure context is available
+    if (!canvasCtx) return;
 
     const visualizeLiveVolume = () => {
       const analyser = mediaRecorderRef.current?.analyser;
-      if (!analyser) {
+      // *** MODIFICATION: Live visualizer now relies directly on the analyser, not on mediaRecorderRef.current.mediaRecorder ***
+      if (!analyser || recordingPhase !== "recording") {
         if (liveAnimationRef.current) {
           cancelAnimationFrame(liveAnimationRef.current);
           liveAnimationRef.current = null;
@@ -515,7 +658,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
         return;
       }
 
-      const bufferLength = analyser.frequencyBinCount; // Using frequencyBinCount for time domain
+      const bufferLength = analyser.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
 
       const draw = () => {
@@ -554,7 +697,6 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
           return;
         }
 
-        // *** NEW: Update currentPlaybackTime directly from audioRef in animation loop ***
         if (audioRef.current) {
           setCurrentPlaybackTime(audioRef.current.currentTime);
         }
@@ -574,7 +716,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
 
     // Main logic based on recordingPhase
     if (recordingPhase === "recording") {
-      console.log("Visualizer useEffect: Drawing live waveform."); // Debug log
+      console.log("Visualizer useEffect: Drawing live waveform.");
       visualizeLiveVolume();
     } else if (recordingPhase === "review") {
       const audioBuffer = reviewAudioBufferRef.current;
@@ -583,39 +725,39 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
           isPlayingBack,
           currentPlaybackTime,
           totalAudioDuration,
-        }); // Debug log
+        });
         if (isPlayingBack) {
-          console.log("Visualizer useEffect: Playing back, starting playback visualization."); // Debug log
-          visualizePlayback(); // This loop will continuously draw the waveform with playback head
+          console.log("Visualizer useEffect: Playing back, starting playback visualization.");
+          visualizePlayback();
         } else {
-          console.log("Visualizer useEffect: Not playing back, drawing static waveform."); // Debug log
+          console.log("Visualizer useEffect: Not playing back, drawing static waveform.");
           if (reviewAnimationRef.current) {
             cancelAnimationFrame(reviewAnimationRef.current);
             reviewAnimationRef.current = null;
           }
-          drawReviewWaveform(canvasCtx, WIDTH, HEIGHT, audioBuffer); // Draw static waveform
+          drawReviewWaveform(canvasCtx, WIDTH, HEIGHT, audioBuffer);
         }
       } else {
         console.log(
           "Visualizer useEffect: Review phase, but audioBuffer is null. Clearing canvas."
-        ); // Debug log
+        );
         clearCanvas();
       }
     } else {
       // recordingPhase === 'idle'
-      console.log("Visualizer useEffect: Idle phase. Clearing canvas."); // Debug log
+      console.log("Visualizer useEffect: Idle phase. Clearing canvas.");
       clearCanvas();
     }
 
     return () => {
-      console.log("Visualizer useEffect cleanup."); // Debug log
+      console.log("Visualizer useEffect cleanup.");
       if (liveAnimationRef.current) cancelAnimationFrame(liveAnimationRef.current);
       if (reviewAnimationRef.current) cancelAnimationFrame(reviewAnimationRef.current);
       if (playbackAudioContextRef.current) {
         playbackAudioContextRef.current.close();
         playbackAudioContextRef.current = null;
       }
-      // No longer clear reviewAudioBufferRef.current here, as it should persist across review phase renders
+      _stopBackendRecordingCycle();
     };
   }, [
     recordingPhase,
@@ -624,7 +766,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     totalAudioDuration,
     finalAudioBlob,
     theme,
-  ]); // Keep finalAudioBlob in deps as it triggers initial decode for review; // Added canvasCtx, WIDTH, HEIGHT to dependencies;
+  ]);
 
   return (
     <div
@@ -659,7 +801,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
         </>
       )}
 
-      {recordingPhase === "review" && ( // New condition for playback display
+      {recordingPhase === "review" && (
         <PlaybackDisplay
           currentTime={currentPlaybackTime}
           totalDuration={totalAudioDuration}
@@ -668,10 +810,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
       )}
 
       {(recordingPhase === "recording" || recordingPhase === "review") && (
-        <canvas
-          ref={canvasRef}
-          className={`h-full w-full bg-background flex`} // Removed the inner conditional for 'hidden'
-        />
+        <canvas ref={canvasRef} className={`h-full w-full bg-background flex`} />
       )}
       <div className="flex gap-2">
         {recordingPhase === "idle" && (
@@ -736,7 +875,6 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
 };
 
 // New component for displaying playback duration
-// New component for displaying playback duration
 const PlaybackDisplay = React.memo(
   ({
     currentTime,
@@ -748,9 +886,8 @@ const PlaybackDisplay = React.memo(
     timerClassName?: string;
   }) => {
     const formatTime = (timeInSeconds: number) => {
-      // Handle non-finite or negative numbers gracefully
       if (!Number.isFinite(timeInSeconds) || timeInSeconds < 0) {
-        return "00:00:00"; // Display a default zero time for invalid values
+        return "00:00:00";
       }
 
       const hours = Math.floor(timeInSeconds / 3600);
@@ -764,8 +901,6 @@ const PlaybackDisplay = React.memo(
 
     return (
       <main>
-        {" "}
-        {/* Wrap in main for consistency with Timer */}
         <div
           className={cn(
             "items-center -top-12 left-0 absolute justify-center gap-0.5 border p-1.5 rounded-md font-mono font-medium text-foreground flex",
@@ -780,7 +915,6 @@ const PlaybackDisplay = React.memo(
     );
   }
 );
-PlaybackDisplay.displayName = "PlaybackDisplay";
 PlaybackDisplay.displayName = "PlaybackDisplay";
 
 const Timer = React.memo(
