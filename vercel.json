@@ -16,10 +16,12 @@
   "functions": {
     "api/server.py": {
       "runtime": "python3.12",
-      "memory": 1024,
-      "maxDuration": 30,
-      "includeFiles": ["audio_resnet_model_best.pth", "dataset_train.csv"],
-      "systemPackages": ["libgtk-3-dev", "ffmpeg"]
+      "config": {
+        "memory": 1024,
+        "maxDuration": 30,
+        "includeFiles": ["audio_resnet_model_best.pth", "dataset_train.csv"],
+        "systemPackages": ["libgtk-3-dev", "ffmpeg"]
+      }
     }
   },
   "build": {
