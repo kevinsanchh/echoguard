@@ -13,13 +13,7 @@
       "destination": "/api/server"
     }
   ],
-  "functions": {
-    "api/server.py": {
-      "runtime": "python@3.12",
-      "memory": 1024,
-      "maxDuration": 30
-    }
-  },
+
   "build": {
     "env": {
       "PYTHON_VERSION": "3.12.2"
