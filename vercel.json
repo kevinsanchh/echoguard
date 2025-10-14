@@ -8,5 +8,11 @@
       "source": "/api/audio-upload",
       "destination": "/api/server"
     }
-  ]
+  ],
+  "build": {
+    "env": {
+      "PYTHON_VERSION": "3.12.2"
+    },
+    "systemPackages": ["libgtk-3-dev"]
+  }
 }
