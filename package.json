@@ -4,7 +4,8 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "postbuild": "mkdir -p .next/server/api/assets && cp api/audio_resnet_model_best.pth api/dataset_train.csv .next/server/api/assets/"
   },
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",

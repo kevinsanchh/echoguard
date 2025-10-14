@@ -13,8 +13,8 @@ import sys, warnings
 
 # CONFIG (ensure these paths are correct relative to server.py)
 
-MODEL_PATH = Path("./audio_resnet_model_best.pth")
-CSV_PATH = Path("./dataset_train.csv")
+MODEL_PATH = Path("./assets/audio_resnet_model_best.pth")
+CSV_PATH = Path("./assets/dataset_train.csv")
 SAMPLE_RATE = 16000
 MAX_DURATION = 10 # This is the max duration the model expects, your frontend sends 5s snippets
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"

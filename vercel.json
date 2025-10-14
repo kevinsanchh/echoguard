@@ -17,8 +17,7 @@
     "api/server.py": {
       "runtime": "python3.12",
       "memory": 1024,
-      "maxDuration": 30,
-      "includeFiles": ["audio_resnet_model_best.pth", "dataset_train.csv"]
+      "maxDuration": 30
     }
   },
   "build": {
