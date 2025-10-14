@@ -1,59 +1,70 @@
 "use client";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"; // Added useCallback
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { CircleStop, Mic, Play, Pause, Trash } from "lucide-react";
+import { CircleStop, Mic, Play, Pause, Trash, Loader2 } from "lucide-react"; // Added Loader2 icon
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
+
+// --- ffmpeg.wasm imports ---
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { fetchFile } from "@ffmpeg/util";
+// --- End ffmpeg.wasm imports ---
 
 type Props = {
   className?: string;
   timerClassName?: string;
 };
 
-// Global timeouts/intervals (managed by refs now for better cleanup)
 let timerTimeout: NodeJS.Timeout;
 
-// Utility function to pad a number with leading zeros
 const padWithLeadingZeros = (num: number, length: number): string => {
   return String(num).padStart(length, "0");
 };
 
-type RecordingPhase = "idle" | "recording" | "review";
+// *** MODIFICATION: Added loading_ffmpeg, converting phases ***
+type RecordingPhase = "idle" | "loading_ffmpeg" | "recording" | "converting" | "review";
 
-// Configuration for backend audio clips
 const CLIP_DURATION_MS = 5000; // 5 seconds per clip
 
 export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props) => {
   const { theme } = useTheme();
   // States
   const [recordingPhase, setRecordingPhase] = useState<RecordingPhase>("idle");
-  const [isRecording, setIsRecording] = useState<boolean>(false); // Derived from recordingPhase, but kept for visualizer logic
+  const [isRecording, setIsRecording] = useState<boolean>(false);
   const [timer, setTimer] = useState<number>(0);
   const [finalAudioBlob, setFinalAudioBlob] = useState<Blob | null>(null);
   const [isPlayingBack, setIsPlayingBack] = useState<boolean>(false);
   const [currentPlaybackTime, setCurrentPlaybackTime] = useState<number>(0);
   const [totalAudioDuration, setTotalAudioDuration] = useState<number>(0);
+  // *** NEW ffmpeg.wasm states ***
+  const [ffmpegLoaded, setFfmpegLoaded] = useState<boolean>(false);
+  const [ffmpegLoadingMessage, setFfmpegLoadingMessage] = useState<string>("");
+  // *** End NEW ffmpeg.wasm states ***
 
   // Refs for the primary MediaStream and its AudioContext/Analyser for LIVE visualization
   const mediaRecorderRef = useRef<{
     stream: MediaStream | null;
     analyser: AnalyserNode | null;
-    // mediaRecorder: MediaRecorder | null; // Removed - no dedicated visualizer recorder needed
-    audioContext: AudioContext | null; // For live recording analysis
+    audioContext: AudioContext | null;
+    mediaRecorder: MediaRecorder | null; // This is now solely for the frontend's full recording
   }>({
     stream: null,
     analyser: null,
-    // mediaRecorder: null, // Removed
     audioContext: null,
+    mediaRecorder: null, // Initialized for the frontend's full recording
   });
 
-  // Refs for backend continuous clipping
+  // *** REMOVED: Refs for backend continuous clipping (no longer needed) ***
   const backendClipRecorderRef = useRef<MediaRecorder | null>(null);
-  const backendClipChunks = useRef<BlobPart[]>([]); // Chunks for the CURRENT backend clip
+  const backendClipChunks = useRef<BlobPart[]>([]);
   const backendRecorderTimeoutId = useRef<NodeJS.Timeout | null>(null);
 
-  // *** NEW: Ref to store history of completed backend clips for frontend playback ***
+  // Ref to store history of all recorded chunks for frontend full playback
+  const allRecordedChunks = useRef<BlobPart[]>([]);
+
+  // *** NEW: ffmpeg.wasm instance ref ***
+  const ffmpegRef = useRef<FFmpeg | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null); // For playback
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -73,6 +84,42 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     latestRecordingPhase.current = recordingPhase;
   }, [recordingPhase]);
 
+  const loadFFmpeg = useCallback(async () => {
+    if (ffmpegRef.current) {
+      setFfmpegLoaded(true); // Already loaded
+      return;
+    }
+    setRecordingPhase("loading_ffmpeg");
+    setFfmpegLoadingMessage("Loading FFmpeg core...");
+    try {
+      const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd"; // Use a stable CDN URL
+      const ffmpeg = new FFmpeg();
+      ffmpeg.on("log", ({ message }) => {
+        // console.log("[ffmpeg.wasm log]", message); // Uncomment for verbose ffmpeg logs
+        setFfmpegLoadingMessage(message);
+      });
+      await ffmpeg.load({
+        coreURL: `${baseURL}/ffmpeg-core.js`,
+        wasmURL: `${baseURL}/ffmpeg-core.wasm`,
+        workerURL: `${baseURL}/ffmpeg-core.worker.js`,
+      });
+      ffmpegRef.current = ffmpeg;
+      setFfmpegLoaded(true);
+      setRecordingPhase("idle"); // Back to idle after loading
+      console.log("FFmpeg loaded successfully!");
+    } catch (e) {
+      console.error("Failed to load FFmpeg:", e);
+      setFfmpegLoadingMessage("Failed to load FFmpeg. Check console for details.");
+      setFfmpegLoaded(false);
+      setRecordingPhase("idle"); // Back to idle on error
+    }
+  }, []); // Empty dependency array means it's created once
+
+  // Effect to load FFmpeg when component mounts
+  useEffect(() => {
+    loadFFmpeg();
+  }, [loadFFmpeg]);
+
   // Calculate the hours, minutes, and seconds from the timer
   const hours = Math.floor(timer / 3600);
   const minutes = Math.floor((timer % 3600) / 60);
@@ -88,14 +135,120 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     () => padWithLeadingZeros(seconds, 2).split(""),
     [seconds]
   );
+  // --- Backend Recorder Cycle Management ---
+  const _startBackendRecordingCycle = (stream: MediaStream) => {
+    _stopBackendRecordingCycle(); // Clean up any previous cycle's timeout or recorder instance
 
+    if (!stream.active) {
+      console.warn("Attempted to start backend recording cycle with an inactive stream. Skipping.");
+      return;
+    }
+    if (!ffmpegRef.current || !ffmpegLoaded) {
+      console.error("FFmpeg not loaded for backend clip conversion. Cannot start backend cycle.");
+      return;
+    }
+
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mpeg";
+    const options = { mimeType };
+
+    backendClipRecorderRef.current = new MediaRecorder(stream, options);
+    backendClipChunks.current = []; // Reset chunks for the new clip
+
+    backendClipRecorderRef.current.ondataavailable = (e) => {
+      if (e.data.size > 0) {
+        backendClipChunks.current.push(e.data);
+      }
+    };
+
+    backendClipRecorderRef.current.onstop = async () => {
+      console.log(
+        `Backend clip recorder stopped. Chunks collected: ${backendClipChunks.current.length}`
+      );
+      if (backendClipChunks.current.length > 0) {
+        const ffmpeg = ffmpegRef.current!; // Assert non-null, checked above
+        const fullWebmClipBlob = new Blob(backendClipChunks.current, { type: mimeType });
+
+        try {
+          const inputFileName = `clip_input_${Date.now()}.webm`;
+          const outputFileName = `clip_output_${Date.now()}.wav`;
+
+          // *** NEW: Convert the small WebM clip to WAV using ffmpeg.wasm ***
+          await ffmpeg.writeFile(inputFileName, await fetchFile(fullWebmClipBlob));
+          await ffmpeg.exec(["-i", inputFileName, outputFileName]);
+          const data = await ffmpeg.readFile(outputFileName);
+          const wavClipBlob = new Blob([(data as any).buffer], { type: "audio/wav" });
+
+          await sendAudioToBackend(wavClipBlob); // Send the converted WAV clip to backend
+          console.log(`Backend clip (WAV) sent after ffmpeg.wasm conversion.`);
+
+          // Clean up files in FFmpeg's virtual file system
+          await ffmpeg.deleteFile(inputFileName);
+          await ffmpeg.deleteFile(outputFileName);
+        } catch (e) {
+          console.error("Error converting/sending backend clip with ffmpeg.wasm:", e);
+        }
+      }
+      // Immediately restart the cycle for the next clip if still in recording phase
+      if (
+        latestRecordingPhase.current === "recording" &&
+        mediaRecorderRef.current.stream &&
+        mediaRecorderRef.current.stream.active
+      ) {
+        console.log("Restarting backend recording cycle...");
+        _startBackendRecordingCycle(stream); // Recursive call to start the next clip with the same stream
+      } else {
+        console.log(
+          "Not restarting backend recording cycle, recordingPhase is not 'recording' or stream inactive."
+        );
+      }
+    };
+
+    backendClipRecorderRef.current.onerror = (event) => {
+      console.error("Backend MediaRecorder error:", event);
+      if (
+        latestRecordingPhase.current === "recording" &&
+        mediaRecorderRef.current.stream &&
+        mediaRecorderRef.current.stream.active
+      ) {
+        console.log("Restarting backend recording cycle due to error...");
+        _startBackendRecordingCycle(stream);
+      }
+    };
+
+    backendClipRecorderRef.current.start();
+    console.log(`Backend clip recorder started for ${CLIP_DURATION_MS / 1000} seconds.`);
+
+    backendRecorderTimeoutId.current = setTimeout(() => {
+      if (backendClipRecorderRef.current && backendClipRecorderRef.current.state === "recording") {
+        backendClipRecorderRef.current.stop();
+      }
+    }, CLIP_DURATION_MS);
+  };
+
+  const _stopBackendRecordingCycle = () => {
+    if (backendRecorderTimeoutId.current) {
+      clearTimeout(backendRecorderTimeoutId.current);
+      backendRecorderTimeoutId.current = null;
+    }
+    if (backendClipRecorderRef.current && backendClipRecorderRef.current.state === "recording") {
+      backendClipRecorderRef.current.stop();
+    }
+    if (backendClipRecorderRef.current) {
+      backendClipRecorderRef.current.onstop = null;
+      backendClipRecorderRef.current = null;
+    }
+    backendClipChunks.current = [];
+    console.log("Backend recording cycle explicitly stopped and cleaned up.");
+  };
+  // --- End Backend Recorder Cycle Management ---
   const sendAudioToBackend = async (audioBlob: Blob) => {
     const formData = new FormData();
-    formData.append("audio", audioBlob, `audio_${Date.now()}.webm`); // Filename and type to match WebM
+    // *** MODIFICATION: Now expects WAV, not WebM, from frontend ffmpeg.wasm ***
+    formData.append("audio", audioBlob, `audio_final_${Date.now()}.wav`);
 
     try {
       console.log(
-        `Attempting to send audio clip (${(audioBlob.size / 1024).toFixed(
+        `Attempting to send FINAL WAV clip (${(audioBlob.size / 1024).toFixed(
           2
         )} KB) to /api/audio-upload`
       );
@@ -105,21 +258,20 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
       });
 
       console.log(
-        "Response received for audio upload. Status:",
+        "Response received for FINAL WAV upload. Status:",
         response.status,
         "URL:",
         response.url
       );
 
       if (response.ok) {
-        console.log("Audio clip sent successfully! Backend response status:", response.status);
+        console.log("FINAL WAV clip sent successfully! Backend response status:", response.status);
         try {
           const responseData = await response.json();
           console.log("Backend JSON response data:", responseData);
-          // TODO: Use backend response (e.g., prediction) here for future flags
         } catch (jsonError) {
           console.warn(
-            "Could not parse JSON response from backend (might be empty or HTML from redirect).",
+            "Could not parse JSON response from backend (might be empty or non-JSON success).",
             jsonError
           );
           const textResponse = await response.text();
@@ -129,21 +281,23 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
           );
         }
       } else {
-        let errorData = {};
+        const errorText = await response.text();
+        let errorData = { message: errorText };
+
         try {
-          errorData = await response.json();
-        } catch (e) {
-          errorData = { message: await response.text() };
-        }
+          const jsonError = JSON.parse(errorText);
+          errorData = jsonError;
+        } catch (e) {}
+
         console.error(
-          "Failed to send audio clip:",
+          "Failed to send FINAL WAV clip:",
           response.status,
           response.statusText,
           errorData
         );
       }
     } catch (error) {
-      console.error("Error sending audio clip (network or CORS issue):", error);
+      console.error("Error sending FINAL WAV clip (network or CORS issue):", error);
     }
   };
 
@@ -230,83 +384,14 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   };
 
   // --- Backend Recorder Cycle Management ---
-  const _startBackendRecordingCycle = (stream: MediaStream) => {
-    _stopBackendRecordingCycle(); // Clean up any previous cycle's timeout or recorder instance
 
-    if (!stream.active) {
-      console.warn("Attempted to start backend recording cycle with an inactive stream. Skipping.");
-      return;
-    }
-
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mpeg";
-    const options = { mimeType };
-
-    backendClipRecorderRef.current = new MediaRecorder(stream, options);
-    backendClipChunks.current = []; // Reset chunks for the new clip
-
-    backendClipRecorderRef.current.ondataavailable = (e) => {
-      if (e.data.size > 0) {
-        backendClipChunks.current.push(e.data);
-      }
-    };
-
-    backendClipRecorderRef.current.onstop = async () => {
-      console.log(
-        `Backend clip recorder stopped. Chunks collected: ${backendClipChunks.current.length}`
-      );
-      if (backendClipChunks.current.length > 0) {
-        const fullClipBlob = new Blob(backendClipChunks.current, { type: mimeType });
-        await sendAudioToBackend(fullClipBlob);
-        // *** MODIFICATION: Removed line pushing to frontendPlaybackClipHistoryRef.current ***
-        // console.log(`Frontend playback history updated. Total clips: ${frontendPlaybackClipHistoryRef.current.length}`); // Log removed
-      }
-      if (latestRecordingPhase.current === "recording") {
-        console.log("Restarting backend recording cycle...");
-        _startBackendRecordingCycle(stream);
-      } else {
-        console.log(
-          "Not restarting backend recording cycle, latestRecordingPhase is not 'recording'. Current phase:",
-          latestRecordingPhase.current
-        );
-      }
-    };
-
-    backendClipRecorderRef.current.onerror = (event) => {
-      console.error("Backend MediaRecorder error:", event);
-      if (latestRecordingPhase.current === "recording") {
-        console.log("Restarting backend recording cycle due to error...");
-        _startBackendRecordingCycle(stream);
-      }
-    };
-
-    backendClipRecorderRef.current.start();
-    console.log(`Backend clip recorder started for ${CLIP_DURATION_MS / 1000} seconds.`);
-
-    backendRecorderTimeoutId.current = setTimeout(() => {
-      if (backendClipRecorderRef.current && backendClipRecorderRef.current.state === "recording") {
-        backendClipRecorderRef.current.stop();
-      }
-    }, CLIP_DURATION_MS);
-  };
-
-  const _stopBackendRecordingCycle = () => {
-    if (backendRecorderTimeoutId.current) {
-      clearTimeout(backendRecorderTimeoutId.current);
-      backendRecorderTimeoutId.current = null;
-    }
-    if (backendClipRecorderRef.current && backendClipRecorderRef.current.state === "recording") {
-      backendClipRecorderRef.current.stop();
-    }
-    if (backendClipRecorderRef.current) {
-      backendClipRecorderRef.current.onstop = null;
-      backendClipRecorderRef.current = null;
-    }
-    backendClipChunks.current = [];
-    console.log("Backend recording cycle explicitly stopped and cleaned up.");
-  };
   // --- End Backend Recorder Cycle Management ---
 
   function startRecording() {
+    if (!ffmpegLoaded) {
+      alert("FFmpeg is still loading or failed to load. Please wait or refresh.");
+      return;
+    }
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       navigator.mediaDevices
         .getUserMedia({ audio: true })
@@ -314,9 +399,8 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
           setRecordingPhase("recording");
           setIsRecording(true);
           setTimer(0);
-          // *** MODIFICATION: Clear previous final blob and history ***
+          allRecordedChunks.current = [];
           setFinalAudioBlob(null); // Clear any previous stitched audio
-          // frontendPlaybackClipHistoryRef.current = []; // Removed - no longer managing history on frontend
           console.log("startRecording: Initializing for new recording.");
 
           const AudioContext = window.AudioContext;
@@ -329,6 +413,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
             stream,
             analyser,
             audioContext: audioCtx,
+            mediaRecorder: null, // Will be set below
           };
 
           const mimeType = MediaRecorder.isTypeSupported("audio/webm")
@@ -346,9 +431,27 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
             setIsRecording(false);
             return;
           }
-          console.log(`MediaRecorder for live visualizer will use MIME type: ${mimeType}`);
+          console.log(`MediaRecorder for full recording will use MIME type: ${mimeType}`);
 
-          _startBackendRecordingCycle(stream);
+          // --- Full Recording for Frontend Playback/Conversion ---
+          const fullMediaRecorder = new MediaRecorder(stream, { mimeType });
+          const currentAllRecordedChunksRef = allRecordedChunks;
+          fullMediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+              currentAllRecordedChunksRef.current.push(e.data);
+              // console.log(
+              //   `Frontend full recorder collected chunk: ${e.data.size} bytes. Total chunks: ${currentAllRecordedChunksRef.current.length}`
+              // );
+            }
+          };
+          fullMediaRecorder.onstop = () => {
+            console.log("Frontend full MediaRecorder stopped.");
+          };
+          fullMediaRecorder.start(200); // Start with a 200ms timeslice to populate chunks regularly
+          mediaRecorderRef.current.mediaRecorder = fullMediaRecorder;
+
+          // --- Start Backend Recording Cycle ---
+          _startBackendRecordingCycle(stream); // Start the continuous clipping for backend
         })
         .catch((error) => {
           alert("Error accessing microphone: " + error.message);
@@ -364,116 +467,95 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   }
 
   async function stopListening() {
-    const { stream, analyser, audioContext } = mediaRecorderRef.current;
+    const { stream, analyser, audioContext, mediaRecorder } = mediaRecorderRef.current;
 
-    _stopBackendRecordingCycle();
+    // --- Stop Backend Recording Cycle ---
+    _stopBackendRecordingCycle(); // Stop the continuous backend clipping
 
+    // Stop the full recording MediaRecorder
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop(); // This recorder collects all chunks for frontend playback
+    }
+    // Stop actual MediaStream tracks
     if (stream) {
       stream.getTracks().forEach((track) => track.stop());
     }
+
+    // Disconnect analyser and close audio context
     if (analyser) {
       analyser.disconnect();
     }
     if (audioContext) {
       audioContext.close();
     }
+
+    // Clear live animation frame
     if (liveAnimationRef.current) {
       cancelAnimationFrame(liveAnimationRef.current);
     }
 
-    setIsRecording(false);
-    clearTimeout(timerTimeout);
+    setIsRecording(false); // Stop live visualization flag
+    clearTimeout(timerTimeout); // Stop the timer
 
-    console.log("stopListening: Requesting combined audio from backend for playback.");
-    try {
-      const stitchResponse = await fetch("/api/stitch-and-return-audio", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({}),
-      });
+    console.log("stopListening: Processing full recorded audio for frontend playback.");
 
-      if (stitchResponse.ok) {
-        const data = await stitchResponse.json();
-        if (data.audioDataUri) {
-          console.log("stopListening: Received combined audio data URI from backend.");
-          const blob = await fetch(data.audioDataUri).then((res) => res.blob());
-          setFinalAudioBlob(blob);
+    if (allRecordedChunks.current.length > 0) {
+      setRecordingPhase("converting"); // New phase: show conversion progress
+      setFfmpegLoadingMessage("Converting full audio (WebM to WAV) for playback...");
 
-          const tempAudioContext = new window.AudioContext();
-          blob
-            .arrayBuffer()
-            .then((buffer) => {
-              return tempAudioContext.decodeAudioData(buffer);
-            })
-            .then((audioBuffer) => {
-              reviewAudioBufferRef.current = audioBuffer;
-              setTotalAudioDuration(audioBuffer.duration);
-              tempAudioContext.close();
-              setRecordingPhase("review");
-              console.log(
-                "stopListening: AudioBuffer decoded from stitched backend audio, transitioning to review."
-              );
-              // *** NEW LOGS: Inspect AudioBuffer contents ***
-              console.log("AudioBuffer properties:", {
-                duration: audioBuffer.duration,
-                sampleRate: audioBuffer.sampleRate,
-                numberOfChannels: audioBuffer.numberOfChannels,
-                firstChannelDataLength: audioBuffer.getChannelData(0).length,
-                first5Samples: Array.from(audioBuffer.getChannelData(0).slice(0, 5)),
-              });
-              if (audioBuffer.getChannelData(0).some((sample) => sample !== 0)) {
-                console.log("AudioBuffer contains non-zero data (likely audible).");
-              } else {
-                console.warn("AudioBuffer contains only zero data (likely silent or corrupted).");
-              }
-              // *** END NEW LOGS ***
-            })
-            .catch((e) => {
-              console.error(
-                "stopListening: Error decoding stitched audio for duration/waveform:",
-                e
-              );
-              tempAudioContext.close();
-              setTotalAudioDuration(0);
-              setRecordingPhase("idle");
-              setFinalAudioBlob(null);
-              reviewAudioBufferRef.current = null;
-            });
-        } else {
-          console.error(
-            "stopListening: Backend did not return audioDataUri in a successful response."
-          );
-          setRecordingPhase("idle");
-          setTotalAudioDuration(0);
-          setFinalAudioBlob(null);
-          reviewAudioBufferRef.current = null;
-        }
-      } else {
-        const errorText = await stitchResponse.text();
-        let errorData = { message: errorText };
+      try {
+        const firstChunk = allRecordedChunks.current[0];
+        const mimeType = firstChunk instanceof Blob ? firstChunk.type : "audio/webm";
+        const fullWebmBlob = new Blob(allRecordedChunks.current, { type: mimeType });
 
-        try {
-          const jsonError = JSON.parse(errorText);
-          errorData = jsonError;
-        } catch (e) {
-          // Not JSON
+        if (!ffmpegRef.current || !ffmpegLoaded) {
+          throw new Error("FFmpeg not loaded for conversion.");
         }
 
-        console.error(
-          "stopListening: Failed to get stitched audio from backend:",
-          stitchResponse.status,
-          stitchResponse.statusText,
-          errorData
+        const ffmpeg = ffmpegRef.current;
+        const inputFileName = `full_input_${Date.now()}.webm`;
+        const outputFileName = `full_output_${Date.now()}.wav`;
+
+        await ffmpeg.writeFile(inputFileName, await fetchFile(fullWebmBlob));
+        console.log(`FFmpeg: Wrote ${inputFileName} to virtual file system.`);
+        setFfmpegLoadingMessage("Running FFmpeg conversion for full playback...");
+
+        await ffmpeg.exec(["-i", inputFileName, outputFileName]);
+        console.log(`FFmpeg: Conversion complete. Reading ${outputFileName}.`);
+        setFfmpegLoadingMessage("Reading converted WAV for playback...");
+
+        const data = await ffmpeg.readFile(outputFileName);
+        const wavBlob = new Blob([(data as any).buffer], { type: "audio/wav" });
+        console.log(`FFmpeg: Converted full WAV blob created (size: ${wavBlob.size} bytes).`);
+
+        setFinalAudioBlob(wavBlob); // Set this for frontend playback
+
+        const tempAudioContext = new window.AudioContext();
+        const audioBuffer = await tempAudioContext.decodeAudioData(await wavBlob.arrayBuffer());
+        reviewAudioBufferRef.current = audioBuffer;
+        setTotalAudioDuration(audioBuffer.duration);
+        tempAudioContext.close();
+        setRecordingPhase("review");
+        console.log(
+          "stopListening: AudioBuffer decoded from converted WAV, transitioning to review."
         );
+
+        // Clean up full recording files in FFmpeg's virtual file system
+        await ffmpeg.deleteFile(inputFileName);
+        await ffmpeg.deleteFile(outputFileName);
+      } catch (e) {
+        console.error(
+          "stopListening: Error during FFmpeg conversion or decoding for full playback:",
+          e
+        );
+        alert("Audio processing failed for playback: " + (e as Error).message);
         setRecordingPhase("idle");
         setTotalAudioDuration(0);
         setFinalAudioBlob(null);
         reviewAudioBufferRef.current = null;
       }
-    } catch (error) {
-      console.error("stopListening: Network error requesting stitched audio:", error);
+    } else {
+      console.warn("stopListening: No audio chunks recorded for frontend review.");
       setRecordingPhase("idle");
       setTotalAudioDuration(0);
       setFinalAudioBlob(null);
@@ -484,6 +566,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
       stream: null,
       analyser: null,
       audioContext: null,
+      mediaRecorder: null, // Clear the recorder instance
     };
   }
 
@@ -501,7 +584,8 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
 
     // Clear any previous recorded data
     setFinalAudioBlob(null);
-    // *** MODIFICATION: Removed frontendPlaybackClipHistoryRef.current = []; ***
+    allRecordedChunks.current = []; // Clear chunks for the full recording
+    // frontendPlaybackClipHistoryRef.current = []; // Removed - no longer needed
     reviewAudioBufferRef.current = null;
 
     // Clear canvas
@@ -516,6 +600,8 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
 
     setTimer(0);
     setRecordingPhase("idle"); // Return to initial state
+    // ffmpeg.wasm will usually remain loaded, but we might want to terminate/reload for cleanup if necessary
+    // For now, let it persist.
   }
 
   const togglePlayback = async () => {
@@ -757,7 +843,6 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
         playbackAudioContextRef.current.close();
         playbackAudioContextRef.current = null;
       }
-      _stopBackendRecordingCycle();
     };
   }, [
     recordingPhase,
@@ -773,12 +858,30 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
       className={cn(
         "flex h-16 rounded-md relative w-full items-center justify-center gap-2 max-w-5xl",
         {
-          "border p-1": recordingPhase !== "idle", // Apply border if not idle
-          "border-none p-0": recordingPhase === "idle", // No border if idle
+          "border p-1": recordingPhase !== "idle" && recordingPhase !== "loading_ffmpeg",
+          "border-none p-0": recordingPhase === "idle" || recordingPhase === "loading_ffmpeg",
         },
         className
       )}
     >
+      {recordingPhase === "loading_ffmpeg" && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10 rounded-md">
+          <Loader2 className="h-6 w-6 animate-spin mr-2" />
+          <span className="text-sm text-muted-foreground">
+            {ffmpegLoadingMessage || "Loading FFmpeg..."}
+          </span>
+        </div>
+      )}
+
+      {recordingPhase === "converting" && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10 rounded-md">
+          <Loader2 className="h-6 w-6 animate-spin mr-2" />
+          <span className="text-sm text-muted-foreground">
+            {ffmpegLoadingMessage || "Converting audio..."}
+          </span>
+        </div>
+      )}
+
       {recordingPhase === "recording" && (
         <>
           <Timer
@@ -813,15 +916,26 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
         <canvas ref={canvasRef} className={`h-full w-full bg-background flex`} />
       )}
       <div className="flex gap-2">
-        {recordingPhase === "idle" && (
+        {(recordingPhase === "idle" || recordingPhase === "loading_ffmpeg") && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button onClick={startRecording} size={"icon"}>
-                <Mic size={15} />
+              <Button
+                onClick={startRecording}
+                size={"icon"}
+                disabled={!ffmpegLoaded || recordingPhase === "loading_ffmpeg"}
+              >
+                {recordingPhase === "loading_ffmpeg" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Mic size={15} />
+                )}
               </Button>
             </TooltipTrigger>
             <TooltipContent className="m-2">
-              <span> Start Listening</span>
+              <span>
+                {" "}
+                {recordingPhase === "loading_ffmpeg" ? "Loading FFmpeg..." : "Start Listening"}{" "}
+              </span>
             </TooltipContent>
           </Tooltip>
         )}
