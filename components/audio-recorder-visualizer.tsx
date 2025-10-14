@@ -331,7 +331,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
             audioContext: audioCtx,
           };
 
-          let mimeType = MediaRecorder.isTypeSupported("audio/webm")
+          const mimeType = MediaRecorder.isTypeSupported("audio/webm")
             ? "audio/webm"
             : MediaRecorder.isTypeSupported("audio/mpeg")
             ? "audio/mpeg"
