@@ -2,7 +2,9 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"; // Added useCallback
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { CircleStop, Mic, Play, Pause, Trash, Loader2, Upload } from "lucide-react"; // Added Upload icon
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Slider } from "@/components/ui/slider";
+import { CircleStop, Mic, Play, Pause, Trash, Loader2, Upload, Settings } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +27,7 @@ const padWithLeadingZeros = (num: number, length: number): string => {
 // *** MODIFICATION: Added loading_ffmpeg, converting phases ***
 type RecordingPhase = "idle" | "loading_ffmpeg" | "recording" | "converting" | "review";
 
-const CLIP_DURATION_MS = 5000; // 5 seconds per clip
+// CLIP_DURATION_MS is now dynamic via clipDurationMs state
 
 export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props) => {
   const { theme } = useTheme();
@@ -37,6 +39,9 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   const [isPlayingBack, setIsPlayingBack] = useState<boolean>(false);
   const [currentPlaybackTime, setCurrentPlaybackTime] = useState<number>(0);
   const [totalAudioDuration, setTotalAudioDuration] = useState<number>(0);
+  const [clipDurationSeconds, setClipDurationSeconds] = useState<number>(5);
+  const [clipDurationMs, setClipDurationMs] = useState<number>(5000);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   // *** NEW ffmpeg.wasm states ***
   const [ffmpegLoaded, setFfmpegLoaded] = useState<boolean>(false);
   const [ffmpegLoadingMessage, setFfmpegLoadingMessage] = useState<string>("");
@@ -217,13 +222,13 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     };
 
     backendClipRecorderRef.current.start();
-    console.log(`Backend clip recorder started for ${CLIP_DURATION_MS / 1000} seconds.`);
+    console.log(`Backend clip recorder started for ${clipDurationMs / 1000} seconds.`);
 
     backendRecorderTimeoutId.current = setTimeout(() => {
       if (backendClipRecorderRef.current && backendClipRecorderRef.current.state === "recording") {
         backendClipRecorderRef.current.stop();
       }
-    }, CLIP_DURATION_MS);
+    }, clipDurationMs);
   };
 
   const _stopBackendRecordingCycle = () => {
@@ -905,7 +910,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   return (
     <div
       className={cn(
-        "flex h-16 rounded-md relative w-full items-center justify-center gap-2 max-w-5xl",
+        "flex h-16 rounded-md  w-full items-center justify-center gap-2 max-w-5xl",
         {
           "border p-1": recordingPhase !== "idle" && recordingPhase !== "loading_ffmpeg",
           "border-none p-0": recordingPhase === "idle" || recordingPhase === "loading_ffmpeg",
@@ -1059,6 +1064,38 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
         onChange={handleFileUpload}
         className="hidden"
       />
+      <Popover open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            size="icon"
+            variant="outline"
+            className="absolute bottom-4 right-4 z-50 border-neutral-200"
+          >
+            <Settings size={15} />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-48 p-4" align="end">
+          <div className="space-y-2">
+            <h4 className="font-medium leading-none">Clip Length</h4>
+            <p className="text-sm text-muted-foreground">Set duration in seconds</p>
+            <Slider
+              defaultValue={[clipDurationSeconds]}
+              max={30}
+              min={5}
+              step={5}
+              onValueChange={(value) => {
+                setClipDurationSeconds(value[0]);
+                setClipDurationMs(value[0] * 1000);
+              }}
+            />
+            <div className="text-xs text-muted-foreground flex justify-between">
+              <span>5s</span>
+              <span>{clipDurationSeconds}s</span>
+              <span>30s</span>
+            </div>
+          </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 };

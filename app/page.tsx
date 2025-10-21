@@ -2,8 +2,8 @@ import { AudioRecorderWithVisualizer } from "@/components/audio-recorder-visuali
 
 export default function Home() {
   return (
-    <main className="max-w-md  mx-auto  h-screen">
-      <div className="flex justify-center items-center h-full w-full bg ">
+    <main className="h-screen relative ">
+      <div className="flex justify-center items-center h-full w-full bg max-w-md mx-auto">
         <AudioRecorderWithVisualizer />
       </div>
     </main>
