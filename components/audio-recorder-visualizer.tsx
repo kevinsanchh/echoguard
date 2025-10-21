@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"; // Added useCallback
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { CircleStop, Mic, Play, Pause, Trash, Loader2 } from "lucide-react"; // Added Loader2 icon
+import { CircleStop, Mic, Play, Pause, Trash, Loader2, Upload } from "lucide-react"; // Added Upload icon
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 
@@ -76,6 +76,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   const playbackSourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
   const playbackAnalyserRef = useRef<AnalyserNode | null>(null);
   const reviewAudioBufferRef = useRef<AudioBuffer | null>(null); // To store decoded audio buffer for review
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const latestRecordingPhase = useRef<RecordingPhase>("idle"); // To store the latest recordingPhase
 
@@ -604,6 +605,54 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     // For now, let it persist.
   }
 
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!ffmpegRef.current || !ffmpegLoaded) {
+      alert("FFmpeg is still loading or failed to load. Please wait or refresh.");
+      return;
+    }
+
+    setRecordingPhase("converting");
+    setFfmpegLoadingMessage("Converting uploaded audio for processing...");
+
+    try {
+      const inputExt = file.name.split(".").pop() || "";
+      const inputName = `upload_input_${Date.now()}.${inputExt}`;
+      const outputName = `upload_output_${Date.now()}.wav`;
+
+      await ffmpegRef.current!.writeFile(inputName, await fetchFile(file));
+      await ffmpegRef.current!.exec(["-i", inputName, outputName]);
+      const data = await ffmpegRef.current!.readFile(outputName);
+      const wavBlob = new Blob([(data as any).buffer], { type: "audio/wav" });
+
+      await sendAudioToBackend(wavBlob);
+
+      setFinalAudioBlob(wavBlob);
+
+      const tempAudioContext = new window.AudioContext();
+      const audioBuffer = await tempAudioContext.decodeAudioData(await wavBlob.arrayBuffer());
+      reviewAudioBufferRef.current = audioBuffer;
+      setTotalAudioDuration(audioBuffer.duration);
+      tempAudioContext.close();
+      setRecordingPhase("review");
+
+      await ffmpegRef.current!.deleteFile(inputName);
+      await ffmpegRef.current!.deleteFile(outputName);
+
+      e.target.value = "";
+      console.log("Uploaded file processed and ready for review.");
+    } catch (e) {
+      console.error("Error processing uploaded file:", e);
+      alert("Failed to process uploaded file: " + (e as Error).message);
+      setRecordingPhase("idle");
+      setTotalAudioDuration(0);
+      setFinalAudioBlob(null);
+      reviewAudioBufferRef.current = null;
+    }
+  }
+
   const togglePlayback = async () => {
     if (!finalAudioBlob || !reviewAudioBufferRef.current) {
       console.warn("togglePlayback: No finalAudioBlob or reviewAudioBuffer.current available.");
@@ -917,27 +966,46 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
       )}
       <div className="flex gap-2">
         {(recordingPhase === "idle" || recordingPhase === "loading_ffmpeg") && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                onClick={startRecording}
-                size={"icon"}
-                disabled={!ffmpegLoaded || recordingPhase === "loading_ffmpeg"}
-              >
-                {recordingPhase === "loading_ffmpeg" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Mic size={15} />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent className="m-2">
-              <span>
-                {" "}
-                {recordingPhase === "loading_ffmpeg" ? "Loading FFmpeg..." : "Start Listening"}{" "}
-              </span>
-            </TooltipContent>
-          </Tooltip>
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={startRecording}
+                  size={"icon"}
+                  disabled={!ffmpegLoaded || recordingPhase === "loading_ffmpeg"}
+                >
+                  {recordingPhase === "loading_ffmpeg" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Mic size={15} />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="m-2">
+                <span>
+                  {" "}
+                  {recordingPhase === "loading_ffmpeg"
+                    ? "Loading FFmpeg..."
+                    : "Start Listening"}{" "}
+                </span>
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={() => fileInputRef.current?.click()}
+                  size={"icon"}
+                  disabled={!ffmpegLoaded || recordingPhase === "loading_ffmpeg"}
+                >
+                  <Upload size={15} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="m-2">
+                <span>Upload Audio File</span>
+              </TooltipContent>
+            </Tooltip>
+          </>
         )}
 
         {recordingPhase === "recording" && (
@@ -984,6 +1052,13 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
           </>
         )}
       </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="audio/*"
+        onChange={handleFileUpload}
+        className="hidden"
+      />
     </div>
   );
 };
