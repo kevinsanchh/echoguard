@@ -47,6 +47,16 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   const [ffmpegLoadingMessage, setFfmpegLoadingMessage] = useState<string>("");
   // NEW: Store ML model flags (sound detections)
   const [mlFlags, setMlFlags] = useState<{ label: string; confidence: number; time: string }[]>([]);
+  // --- ML Flags scroll handling ---
+  const mlFlagsContainerRef = useRef<HTMLDivElement | null>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+
+  const scrollToBottom = useCallback(() => {
+    const el = mlFlagsContainerRef.current;
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }
+  }, []);
 
   // Refs for the primary MediaStream and its AudioContext/Analyser for LIVE visualization
   const mediaRecorderRef = useRef<{
@@ -91,6 +101,29 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     latestRecordingPhase.current = recordingPhase;
   }, [recordingPhase]);
 
+  useEffect(() => {
+    const el = mlFlagsContainerRef.current;
+    if (!el) return;
+
+    const handleScroll = () => {
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      setIsAtBottom(distanceFromBottom < 20); // only "at bottom" if within 20px of end
+    };
+
+    el.addEventListener("scroll", handleScroll);
+    handleScroll(); // initialize on mount
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  // Auto-scroll when new flags are added — only if user is at bottom
+  useEffect(() => {
+    const el = mlFlagsContainerRef.current;
+    if (!el) return;
+
+    if (isAtBottom) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }
+  }, [mlFlags, isAtBottom]);
   const loadFFmpeg = useCallback(async () => {
     if (ffmpegRef.current) {
       setFfmpegLoaded(true); // Already loaded
@@ -1107,17 +1140,38 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
       </div>
       {/* ML Flags Display */}
       {mlFlags.length > 0 && (
-        <div className="w-full text-xs mt-2 border-t p-4   text-left max-w-5xl ">
-          <h4 className="font-semibold mb-1">Detected Sounds:</h4>
-          <ul className="space-y-1">
-            {mlFlags.slice(-5).map((flag, idx) => (
-              <li key={idx} className="text-muted-foreground">
-                <span className="font-mono">{flag.time}</span> —{" "}
-                <span className="font-semibold text-foreground">{flag.label}</span>{" "}
-                <span className="text-muted-foreground">({flag.confidence}% confidence)</span>
-              </li>
-            ))}
-          </ul>
+        <div className="mt-8">
+          <div>
+            <h4 className="font-semibold mb-2 text-xs">Detected Sounds:</h4>
+          </div>
+          <div
+            className="relative w-full max-h-[9rem]  overflow-y-auto text-xs  border-t p-4 text-left max-w-5xl"
+            ref={mlFlagsContainerRef}
+          >
+            <ul className="">
+              {mlFlags.map((flag, idx) => (
+                <li
+                  key={idx}
+                  className="text-muted-foreground hover:bg-neutral-100 rounded-md p-1 cursor-pointer"
+                >
+                  <span className="font-mono">{flag.time}</span> —{" "}
+                  <span className="font-semibold text-foreground">{flag.label}</span>{" "}
+                  <span className="text-muted-foreground">({flag.confidence}% confidence)</span>
+                </li>
+              ))}
+            </ul>
+            {/* Scroll-to-bottom button */}
+            {/* Scroll-to-bottom button (floats over the container) */}
+            {!isAtBottom && (
+              <button
+                onClick={scrollToBottom}
+                className="absolute bottom-3 right-3 bg-background shadow-md border rounded-full w-7 h-7 flex items-center justify-center hover:scale-105 transition z-10"
+                title="Scroll to bottom"
+              >
+                ↓
+              </button>
+            )}
+          </div>
         </div>
       )}
     </main>
