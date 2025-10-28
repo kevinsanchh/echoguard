@@ -42,10 +42,11 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   const [clipDurationSeconds, setClipDurationSeconds] = useState<number>(5);
   const [clipDurationMs, setClipDurationMs] = useState<number>(5000);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
-  // *** NEW ffmpeg.wasm states ***
+
   const [ffmpegLoaded, setFfmpegLoaded] = useState<boolean>(false);
   const [ffmpegLoadingMessage, setFfmpegLoadingMessage] = useState<string>("");
-  // *** End NEW ffmpeg.wasm states ***
+  // NEW: Store ML model flags (sound detections)
+  const [mlFlags, setMlFlags] = useState<{ label: string; confidence: number; time: string }[]>([]);
 
   // Refs for the primary MediaStream and its AudioContext/Analyser for LIVE visualization
   const mediaRecorderRef = useRef<{
@@ -275,6 +276,18 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
         try {
           const responseData = await response.json();
           console.log("Backend JSON response data:", responseData);
+
+          // NEW: Push the prediction into ML flags state
+          if (responseData.prediction && responseData.confidence) {
+            setMlFlags((prev) => [
+              ...prev,
+              {
+                label: responseData.prediction,
+                confidence: responseData.confidence,
+                time: new Date().toLocaleTimeString(),
+              },
+            ]);
+          }
         } catch (jsonError) {
           console.warn(
             "Could not parse JSON response from backend (might be empty or non-JSON success).",
@@ -587,6 +600,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     setIsPlayingBack(false);
     setCurrentPlaybackTime(0);
     setTotalAudioDuration(0);
+    setMlFlags([]);
 
     // Clear any previous recorded data
     setFinalAudioBlob(null);
@@ -908,195 +922,205 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   ]);
 
   return (
-    <div
-      className={cn(
-        "flex h-16 rounded-md  w-full items-center justify-center gap-2 max-w-5xl",
-        {
-          "border p-1": recordingPhase !== "idle" && recordingPhase !== "loading_ffmpeg",
-          "border-none p-0": recordingPhase === "idle" || recordingPhase === "loading_ffmpeg",
-        },
-        className
-      )}
-    >
-      {recordingPhase === "loading_ffmpeg" && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10 rounded-md">
-          <Loader2 className="h-6 w-6 animate-spin mr-2" />
-          <span className="text-sm text-muted-foreground">
-            {ffmpegLoadingMessage || "Loading FFmpeg..."}
-          </span>
-        </div>
-      )}
-
-      {recordingPhase === "converting" && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10 rounded-md">
-          <Loader2 className="h-6 w-6 animate-spin mr-2" />
-          <span className="text-sm text-muted-foreground">
-            {ffmpegLoadingMessage || "Converting audio..."}
-          </span>
-        </div>
-      )}
-
-      {recordingPhase === "recording" && (
-        <>
-          <Timer
-            hourLeft={hourLeft}
-            hourRight={hourRight}
-            minuteLeft={minuteLeft}
-            minuteRight={minuteRight}
-            secondLeft={secondLeft}
-            secondRight={secondRight}
+    <main className="max-w-5xl w-full">
+      <div
+        className={cn(
+          "flex h-16 rounded-md  w-full items-center justify-center gap-2 ",
+          {
+            "border p-1": recordingPhase !== "idle" && recordingPhase !== "loading_ffmpeg",
+            "border-none p-0": recordingPhase === "idle" || recordingPhase === "loading_ffmpeg",
+          },
+          className
+        )}
+      >
+        {recordingPhase === "loading_ffmpeg" && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10 rounded-md">
+            <Loader2 className="h-6 w-6 animate-spin mr-2" />
+            <span className="text-sm text-muted-foreground">
+              {ffmpegLoadingMessage || "Loading FFmpeg..."}
+            </span>
+          </div>
+        )}
+        {recordingPhase === "converting" && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10 rounded-md">
+            <Loader2 className="h-6 w-6 animate-spin mr-2" />
+            <span className="text-sm text-muted-foreground">
+              {ffmpegLoadingMessage || "Converting audio..."}
+            </span>
+          </div>
+        )}
+        {recordingPhase === "recording" && (
+          <>
+            <Timer
+              hourLeft={hourLeft}
+              hourRight={hourRight}
+              minuteLeft={minuteLeft}
+              minuteRight={minuteRight}
+              secondLeft={secondLeft}
+              secondRight={secondRight}
+              timerClassName={timerClassName}
+            />
+            <div
+              className={cn(
+                "items-center -top-12 right-0 absolute justify-center gap-0.5 border p-1.5 rounded-md font-mono font-medium text-foreground flex",
+                timerClassName
+              )}
+            >
+              Listening...
+            </div>
+          </>
+        )}
+        {recordingPhase === "review" && (
+          <PlaybackDisplay
+            currentTime={currentPlaybackTime}
+            totalDuration={totalAudioDuration}
             timerClassName={timerClassName}
           />
-          <div
-            className={cn(
-              "items-center -top-12 right-0 absolute justify-center gap-0.5 border p-1.5 rounded-md font-mono font-medium text-foreground flex",
-              timerClassName
-            )}
-          >
-            Listening...
-          </div>
-        </>
-      )}
+        )}
+        {(recordingPhase === "recording" || recordingPhase === "review") && (
+          <canvas ref={canvasRef} className={`h-full w-full bg-background flex`} />
+        )}
 
-      {recordingPhase === "review" && (
-        <PlaybackDisplay
-          currentTime={currentPlaybackTime}
-          totalDuration={totalAudioDuration}
-          timerClassName={timerClassName}
+        <div className="flex gap-2">
+          {(recordingPhase === "idle" || recordingPhase === "loading_ffmpeg") && (
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={startRecording}
+                    size={"icon"}
+                    disabled={!ffmpegLoaded || recordingPhase === "loading_ffmpeg"}
+                  >
+                    {recordingPhase === "loading_ffmpeg" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Mic size={15} />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="m-2">
+                  <span>
+                    {" "}
+                    {recordingPhase === "loading_ffmpeg"
+                      ? "Loading FFmpeg..."
+                      : "Start Listening"}{" "}
+                  </span>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    onClick={() => fileInputRef.current?.click()}
+                    size={"icon"}
+                    disabled={!ffmpegLoaded || recordingPhase === "loading_ffmpeg"}
+                  >
+                    <Upload size={15} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="m-2">
+                  <span>Upload Audio File</span>
+                </TooltipContent>
+              </Tooltip>
+            </>
+          )}
+          {recordingPhase === "recording" && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={stopListening}
+                  size={"icon"}
+                  variant={"destructive"}
+                  className="mr-2"
+                >
+                  <CircleStop size={15} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="m-2">
+                <span> Stop Listening</span>
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {recordingPhase === "review" && (
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button onClick={togglePlayback} size={"icon"}>
+                    {isPlayingBack ? <Pause size={15} /> : <Play size={15} />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="m-2">
+                  <span> {isPlayingBack ? "Pause Playback" : "Start Playback"} </span>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button onClick={discardRecording} size={"icon"} variant={"destructive"}>
+                    <Trash size={15} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="m-2">
+                  <span> Discard Recording</span>
+                </TooltipContent>
+              </Tooltip>
+            </>
+          )}
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="audio/*"
+          onChange={handleFileUpload}
+          className="hidden"
         />
-      )}
-
-      {(recordingPhase === "recording" || recordingPhase === "review") && (
-        <canvas ref={canvasRef} className={`h-full w-full bg-background flex`} />
-      )}
-      <div className="flex gap-2">
-        {(recordingPhase === "idle" || recordingPhase === "loading_ffmpeg") && (
-          <>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  onClick={startRecording}
-                  size={"icon"}
-                  disabled={!ffmpegLoaded || recordingPhase === "loading_ffmpeg"}
-                >
-                  {recordingPhase === "loading_ffmpeg" ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Mic size={15} />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent className="m-2">
-                <span>
-                  {" "}
-                  {recordingPhase === "loading_ffmpeg"
-                    ? "Loading FFmpeg..."
-                    : "Start Listening"}{" "}
-                </span>
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  onClick={() => fileInputRef.current?.click()}
-                  size={"icon"}
-                  disabled={!ffmpegLoaded || recordingPhase === "loading_ffmpeg"}
-                >
-                  <Upload size={15} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent className="m-2">
-                <span>Upload Audio File</span>
-              </TooltipContent>
-            </Tooltip>
-          </>
-        )}
-
-        {recordingPhase === "recording" && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                onClick={stopListening}
-                size={"icon"}
-                variant={"destructive"}
-                className="mr-2"
-              >
-                <CircleStop size={15} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent className="m-2">
-              <span> Stop Listening</span>
-            </TooltipContent>
-          </Tooltip>
-        )}
-
-        {recordingPhase === "review" && (
-          <>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button onClick={togglePlayback} size={"icon"}>
-                  {isPlayingBack ? <Pause size={15} /> : <Play size={15} />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent className="m-2">
-                <span> {isPlayingBack ? "Pause Playback" : "Start Playback"} </span>
-              </TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button onClick={discardRecording} size={"icon"} variant={"destructive"}>
-                  <Trash size={15} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent className="m-2">
-                <span> Discard Recording</span>
-              </TooltipContent>
-            </Tooltip>
-          </>
-        )}
-      </div>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="audio/*"
-        onChange={handleFileUpload}
-        className="hidden"
-      />
-      <Popover open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-        <PopoverTrigger asChild>
-          <Button
-            size="icon"
-            variant="outline"
-            className="absolute bottom-4 right-4 z-50 border-neutral-200"
-          >
-            <Settings size={15} />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-48 p-4" align="end">
-          <div className="space-y-2">
-            <h4 className="font-medium leading-none">Clip Length</h4>
-            <p className="text-sm text-muted-foreground">Set duration in seconds</p>
-            <Slider
-              defaultValue={[clipDurationSeconds]}
-              max={30}
-              min={5}
-              step={5}
-              onValueChange={(value) => {
-                setClipDurationSeconds(value[0]);
-                setClipDurationMs(value[0] * 1000);
-              }}
-            />
-            <div className="text-xs text-muted-foreground flex justify-between">
-              <span>5s</span>
-              <span>{clipDurationSeconds}s</span>
-              <span>30s</span>
+        <Popover open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              size="icon"
+              variant="outline"
+              className="absolute bottom-4 right-4 z-50 border-neutral-200"
+            >
+              <Settings size={15} />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-48 p-4" align="end">
+            <div className="space-y-2">
+              <h4 className="font-medium leading-none">Clip Length</h4>
+              <p className="text-sm text-muted-foreground">Set duration in seconds</p>
+              <Slider
+                defaultValue={[clipDurationSeconds]}
+                max={30}
+                min={5}
+                step={5}
+                onValueChange={(value) => {
+                  setClipDurationSeconds(value[0]);
+                  setClipDurationMs(value[0] * 1000);
+                }}
+              />
+              <div className="text-xs text-muted-foreground flex justify-between">
+                <span>5s</span>
+                <span>{clipDurationSeconds}s</span>
+                <span>30s</span>
+              </div>
             </div>
-          </div>
-        </PopoverContent>
-      </Popover>
-    </div>
+          </PopoverContent>
+        </Popover>
+      </div>
+      {/* ML Flags Display */}
+      {mlFlags.length > 0 && (
+        <div className="w-full text-xs mt-2 border-t p-4   text-left max-w-5xl ">
+          <h4 className="font-semibold mb-1">Detected Sounds:</h4>
+          <ul className="space-y-1">
+            {mlFlags.slice(-5).map((flag, idx) => (
+              <li key={idx} className="text-muted-foreground">
+                <span className="font-mono">{flag.time}</span> —{" "}
+                <span className="font-semibold text-foreground">{flag.label}</span>{" "}
+                <span className="text-muted-foreground">({flag.confidence}% confidence)</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </main>
   );
 };
 
@@ -1126,7 +1150,7 @@ const PlaybackDisplay = React.memo(
     };
 
     return (
-      <main>
+      <main className="">
         <div
           className={cn(
             "items-center -top-12 left-0 absolute justify-center gap-0.5 border p-1.5 rounded-md font-mono font-medium text-foreground flex",
