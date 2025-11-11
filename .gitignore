@@ -44,3 +44,7 @@ next-env.d.ts
 # Ignore Python virtual environments
 venv/
 api/venv/
+
+__pycache__/
+*.pyc
+api/__pycache__/
