@@ -12,6 +12,8 @@ from utils.config import MODEL_PATH, CSV_PATH, SAMPLE_RATE, MAX_DURATION, DEVICE
 from utils.model_loader import load_ml_assets
 from utils.audio_utils import load_audio, preprocess
 
+from routes.home import home_bp
+
 # app instance
 app = Flask(__name__)
 CORS(app)
@@ -23,15 +25,13 @@ if not os.path.exists(app.instance_path):
 # Load ML model and classes at startup once
 # GLOBAL MODEL AND CLASSES
 global_model, global_classes = load_ml_assets()
+app.config["model"] = global_model
+app.config["classes"] = global_classes
+app.config["device"] = DEVICE
 print("DEBUG: ML model and classes loaded successfully.")
 
-
-# /api/home - Example endpoint
-@app.route("/api/home", methods=['GET'])
-def return_home():
-    return jsonify({
-        'message': "Example Message",
-    })
+# Register Blueprints
+app.register_blueprint(home_bp)
 
 # /api/audio-upload - Endpoint to receive and process audio
 @app.route("/api/audio-upload", methods=['POST'])
