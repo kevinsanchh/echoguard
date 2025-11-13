@@ -603,6 +603,18 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
         setTotalAudioDuration(audioBuffer.duration);
         tempAudioContext.close();
         setRecordingPhase("review");
+        // --- Save detection summary to localStorage ---
+        if (mlFlags.length > 0) {
+          const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
+          const newRecord = {
+            id: Date.now().toString(),
+            date: new Date().toLocaleString(),
+            detections: mlFlags,
+          };
+          localStorage.setItem("echoguard_recordings", JSON.stringify([...existing, newRecord]));
+          console.log("Saved recording summary locally:", newRecord);
+        }
+
         console.log(
           "stopListening: AudioBuffer decoded from converted WAV, transitioning to review."
         );

@@ -93,7 +93,7 @@ const DashboardDialog = () => {
               className="relative p-4 w-full h-full max-h-[90%] max-w-7xl aspect-3/4"
             >
               {/* Modal content */}
-              <div className="h-full w-full bg-white rounded-lg shadow-sm dark:bg-gray-700">
+              <div className="h-full w-full relative bg-white rounded-lg shadow-sm dark:bg-gray-700">
                 {/* Modal Header */}
                 <div className="p-4 md:p-5 flex justify-between items-center border-b border-neutral-100 ">
                   <h1 className="font-semibold text-xl">Dashboard</h1>
@@ -108,7 +108,58 @@ const DashboardDialog = () => {
                 </div>
 
                 {/* Modal body */}
-                <div className="p-4 md:p-5 space-y-4">this is the body of the modal</div>
+                <div className="p-4 md:p-5 space-y-4 ">
+                  <h3 className="font-semibold text-lg mb-2">Saved Recordings</h3>
+                  <ul className="space-y-2 max-h-[70vh] overflow-y-auto">
+                    {(() => {
+                      if (typeof window === "undefined") return null;
+                      const data = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
+                      if (data.length === 0)
+                        return <li className="text-muted-foreground">No recordings yet</li>;
+                      return data
+                        .slice()
+                        .reverse()
+                        .map((record: any) => (
+                          <li
+                            key={record.id}
+                            className="border border-border rounded-md p-3 bg-background/80 backdrop-blur-sm"
+                          >
+                            <div className="font-medium text-xs text-muted-foreground mb-1">
+                              {record.date}
+                            </div>
+                            <ul className="ml-2 list-disc">
+                              {record.detections.map((det: any, i: number) => (
+                                <li key={i} className="ml-4">
+                                  <span className="font-semibold">{det.label}</span>{" "}
+                                  <span className="text-muted-foreground text-xs">
+                                    ({det.confidence}%)
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </li>
+                        ));
+                    })()}
+                  </ul>
+                </div>
+                {typeof window !== "undefined" &&
+                  (() => {
+                    const data = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
+                    if (data.length === 0) return null; // hide button if no recordings
+
+                    return (
+                      <Button
+                        className="absolute bottom-2 right-2 bg-white text-red-500 border-red-500 border hover:bg-red-500 hover:text-red-50"
+                        size="sm"
+                        onClick={() => {
+                          localStorage.removeItem("echoguard_recordings");
+                          window.location.reload();
+                        }}
+                      >
+                        Clear All History
+                      </Button>
+                    );
+                  })()}
               </div>
             </motion.div>
           </motion.div>
