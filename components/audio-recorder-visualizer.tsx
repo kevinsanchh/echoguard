@@ -1131,7 +1131,9 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
               />
               <div className="text-xs text-muted-foreground flex justify-between">
                 <span>5s</span>
-                <span>{clipDurationSeconds}s</span>
+                <span className="bg-neutral-200 rounded-md px-2 text-neutral-500 ">
+                  {clipDurationSeconds}s
+                </span>
                 <span>30s</span>
               </div>
             </div>
