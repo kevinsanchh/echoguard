@@ -100,6 +100,11 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
 
   const latestRecordingPhase = useRef<RecordingPhase>("idle"); // To store the latest recordingPhase
 
+const recordingIdRef = useRef<string | null>(null);
+const clipIndexRef = useRef<number>(0);
+const lastClipRef = useRef<boolean>(false);
+
+
   // Sync latestRecordingPhase ref with recordingPhase state
   useEffect(() => {
     latestRecordingPhase.current = recordingPhase;
@@ -289,6 +294,12 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     const formData = new FormData();
     // *** MODIFICATION: Now expects WAV, not WebM, from frontend ffmpeg.wasm ***
     formData.append("audio", audioBlob, `audio_final_${Date.now()}.wav`);
+      // NEW: Add session-tracking fields 
+    formData.append("recording_id", recordingIdRef.current || "unknown");
+    formData.append("clip_index", clipIndexRef.current.toString());
+    formData.append("is_last_clip", lastClipRef.current ? "true" : "false");
+    
+    clipIndexRef.current += 1;
 
     try {
       console.log(
@@ -452,6 +463,10 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
       navigator.mediaDevices
         .getUserMedia({ audio: true })
         .then((stream) => {
+           // NEW: Initialize tracking state for this recording session 
+          recordingIdRef.current = Date.now().toString(); // unique session ID
+          clipIndexRef.current = 0;                       // reset clip index
+          lastClipRef.current = false;                   // not final clip yet
           setRecordingPhase("recording");
           setIsRecording(true);
           setTimer(0);
@@ -526,6 +541,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     const { stream, analyser, audioContext, mediaRecorder } = mediaRecorderRef.current;
 
     // --- Stop Backend Recording Cycle ---
+    lastClipRef.current = true;
     _stopBackendRecordingCycle(); // Stop the continuous backend clipping
 
     // Stop the full recording MediaRecorder
