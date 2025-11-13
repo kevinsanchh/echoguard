@@ -92,6 +92,10 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   const playbackSourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
   const playbackAnalyserRef = useRef<AnalyserNode | null>(null);
   const reviewAudioBufferRef = useRef<AudioBuffer | null>(null); // To store decoded audio buffer for review
+  // Cache for precomputed waveform bar heights so rerenders don't destroy the visual
+  const cachedWaveRef = useRef<number[] | null>(null);
+  const cachedWaveBufferKey = useRef<AudioBuffer | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const latestRecordingPhase = useRef<RecordingPhase>("idle"); // To store the latest recordingPhase
@@ -866,38 +870,82 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
 
     const visualizePlayback = () => {
       const audioBuffer = reviewAudioBufferRef.current;
-      if (!audioBuffer || recordingPhase !== "review") {
-        if (reviewAnimationRef.current) {
-          cancelAnimationFrame(reviewAnimationRef.current);
-          reviewAnimationRef.current = null;
-        }
+
+      // If no audio buffer, clear and exit
+      if (!audioBuffer) {
+        clearCanvas();
         return;
       }
 
+      // If buffer changed (new recording/upload), precompute bar heights once
+      if (cachedWaveBufferKey.current !== audioBuffer || !cachedWaveRef.current) {
+        const channelData = audioBuffer.getChannelData(0);
+        const barWidth = 2;
+        const barSpacing = 1;
+        const maxBarHeight = HEIGHT / 2.5;
+        const numBars = Math.floor(WIDTH / (barWidth + barSpacing));
+        const bars: number[] = new Array(numBars);
+
+        for (let i = 0; i < numBars; i++) {
+          const dataIndex = Math.floor(i * (channelData.length / numBars));
+          const amplitude = Math.abs(channelData[dataIndex] || 0);
+          const scaledAmplitude = amplitude * 5; // same boosting as original
+          const barHeight = Math.min(HEIGHT, Math.max(0, scaledAmplitude * maxBarHeight));
+          bars[i] = barHeight;
+        }
+
+        cachedWaveRef.current = bars;
+        cachedWaveBufferKey.current = audioBuffer;
+      }
+
+      const bars = cachedWaveRef.current!;
+      const barWidth = 2;
+      const barSpacing = 1;
+
       const draw = () => {
-        if (recordingPhase !== "review" || !isPlayingBack || !audioBuffer) {
+        // If playback is not active or we've left review, cleanly stop the loop and draw static waveform once
+        if (!isPlayingBack || recordingPhase !== "review") {
           if (reviewAnimationRef.current) {
             cancelAnimationFrame(reviewAnimationRef.current);
             reviewAnimationRef.current = null;
           }
-          drawReviewWaveform(canvasCtx, WIDTH, HEIGHT, audioBuffer, 0, 0);
+          // Draw static cached waveform (no playback head)
+          canvasCtx.clearRect(0, 0, WIDTH, HEIGHT);
+          canvasCtx.fillStyle = "#939393";
+          for (let i = 0; i < bars.length; i++) {
+            const x = (barWidth + barSpacing) * i;
+            const y = HEIGHT / 2 - bars[i] / 2;
+            canvasCtx.fillRect(x, y, barWidth, bars[i]);
+          }
           return;
         }
 
-        if (audioRef.current) {
-          setCurrentPlaybackTime(audioRef.current.currentTime);
+        // Otherwise keep animating from cached bars, draw playback head using live audioRef currentTime
+        reviewAnimationRef.current = requestAnimationFrame(draw);
+
+        // draw cached waveform
+        canvasCtx.clearRect(0, 0, WIDTH, HEIGHT);
+        canvasCtx.fillStyle = "#939393";
+        for (let i = 0; i < bars.length; i++) {
+          const x = (barWidth + barSpacing) * i;
+          const y = HEIGHT / 2 - bars[i] / 2;
+          canvasCtx.fillRect(x, y, barWidth, bars[i]);
         }
 
-        reviewAnimationRef.current = requestAnimationFrame(draw);
-        drawReviewWaveform(
-          canvasCtx,
-          WIDTH,
-          HEIGHT,
-          audioBuffer,
-          currentPlaybackTime,
-          totalAudioDuration
-        );
+        // draw playback head
+        const liveTime = audioRef.current?.currentTime || 0;
+        if (liveTime > 0 && totalAudioDuration > 0) {
+          const playbackPositionX = (liveTime / totalAudioDuration) * WIDTH;
+          canvasCtx.beginPath();
+          canvasCtx.strokeStyle = "red";
+          canvasCtx.lineWidth = 2;
+          canvasCtx.lineCap = "round";
+          canvasCtx.moveTo(playbackPositionX, 0);
+          canvasCtx.lineTo(playbackPositionX, HEIGHT);
+          canvasCtx.stroke();
+        }
       };
+
       draw();
     };
 
