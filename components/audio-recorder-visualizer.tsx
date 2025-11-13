@@ -4,13 +4,24 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
-import { CircleStop, Mic, Play, Pause, Trash, Loader2, Upload, Settings } from "lucide-react";
+import {
+  CircleStop,
+  Mic,
+  Play,
+  Pause,
+  Trash,
+  Loader2,
+  Upload,
+  Settings,
+  Settings2,
+} from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 
 // --- ffmpeg.wasm imports ---
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
+import DashboardDialog from "./dashboard-dialog";
 // --- End ffmpeg.wasm imports ---
 
 type Props = {
@@ -1153,40 +1164,41 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
           onChange={handleFileUpload}
           className="hidden"
         />
-        <Popover open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              size="icon"
-              variant="outline"
-              className="absolute bottom-4 right-4 z-50 border-neutral-200"
-            >
-              <Settings size={15} />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-48 p-4" align="end">
-            <div className="space-y-2">
-              <h4 className="font-medium leading-none">Clip Length</h4>
-              <p className="text-sm text-muted-foreground">Set duration in seconds</p>
-              <Slider
-                defaultValue={[clipDurationSeconds]}
-                max={30}
-                min={5}
-                step={5}
-                onValueChange={(value) => {
-                  setClipDurationSeconds(value[0]);
-                  setClipDurationMs(value[0] * 1000);
-                }}
-              />
-              <div className="text-xs text-muted-foreground flex justify-between">
-                <span>5s</span>
-                <span className="bg-neutral-200 rounded-md px-2 text-neutral-500 ">
-                  {clipDurationSeconds}s
-                </span>
-                <span>30s</span>
+        <div className="absolute bottom-4 right-4 z-50  flex gap-2">
+          <Popover open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+            <PopoverTrigger asChild>
+              <Button size="icon" variant="outline" className=" border-neutral-200">
+                <Settings2 size={15} />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-4" align="end">
+              <div className="space-y-2">
+                <h4 className="font-medium leading-none">Clip Length</h4>
+                <p className="text-sm text-muted-foreground">Set duration in seconds</p>
+                <Slider
+                  defaultValue={[clipDurationSeconds]}
+                  max={30}
+                  min={5}
+                  step={5}
+                  onValueChange={(value) => {
+                    setClipDurationSeconds(value[0]);
+                    setClipDurationMs(value[0] * 1000);
+                  }}
+                />
+                <div className="text-xs text-muted-foreground flex justify-between">
+                  <span>5s</span>
+                  <span className="bg-neutral-200 rounded-md px-2 text-neutral-500 ">
+                    {clipDurationSeconds}s
+                  </span>
+                  <span>30s</span>
+                </div>
               </div>
-            </div>
-          </PopoverContent>
-        </Popover>
+            </PopoverContent>
+          </Popover>
+          <div>
+            <DashboardDialog />
+          </div>
+        </div>
       </div>
       {/* ML Flags Display */}
       {mlFlags.length > 0 && (
