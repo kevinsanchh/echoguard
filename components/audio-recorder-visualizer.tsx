@@ -86,6 +86,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   const backendClipRecorderRef = useRef<MediaRecorder | null>(null);
   const backendClipChunks = useRef<BlobPart[]>([]);
   const backendRecorderTimeoutId = useRef<NodeJS.Timeout | null>(null);
+  const backendRecorderNeedsCleanupRef = useRef<boolean>(false);
 
   // Ref to store history of all recorded chunks for frontend full playback
   const allRecordedChunks = useRef<BlobPart[]>([]);
@@ -286,19 +287,36 @@ const lastClipRef = useRef<boolean>(false);
   };
 
   const _stopBackendRecordingCycle = () => {
+     console.log("Stopping backend recording cycle...");
+
+        // ⭐ CHANGED — Only stop the timeout
     if (backendRecorderTimeoutId.current) {
-      clearTimeout(backendRecorderTimeoutId.current);
-      backendRecorderTimeoutId.current = null;
+        clearTimeout(backendRecorderTimeoutId.current);
+        backendRecorderTimeoutId.current = null; // ⭐ NEW
     }
-    if (backendClipRecorderRef.current && backendClipRecorderRef.current.state === "recording") {
-      backendClipRecorderRef.current.stop();
+
+    // ⭐ CHANGED — Stop recorder but DO NOT destroy it
+    if (
+        backendClipRecorderRef.current &&
+        backendClipRecorderRef.current.state === "recording"
+    ) {
+        console.log("Backend clip recorder stopping safely..."); // ⭐ NEW
+        backendClipRecorderRef.current.stop(); // ⭐ Important — allows onstop to fire
     }
-    if (backendClipRecorderRef.current) {
-      backendClipRecorderRef.current.onstop = null;
-      backendClipRecorderRef.current = null;
-    }
-    backendClipChunks.current = [];
-    console.log("Backend recording cycle explicitly stopped and cleaned up.");
+
+    // ❌ REMOVED — Do NOT detach onstop handler
+    // backendClipRecorderRef.current.onstop = null;
+
+    // ❌ REMOVED — Do NOT destroy recorder instance
+    // backendClipRecorderRef.current = null;
+
+    // ❌ REMOVED — Do NOT clear chunk buffer before it is processed
+    // backendClipChunks.current = [];
+
+    // ⭐ NEW — Mark that cleanup should occur AFTER onstop finishes
+    backendRecorderNeedsCleanupRef.current = true;
+
+    console.log("Backend recording cycle stopped safely (awaiting onstop)."); // ⭐ NEW
   };
   // --- End Backend Recorder Cycle Management ---
   const sendAudioToBackend = async (audioBlob: Blob) => {
@@ -552,9 +570,13 @@ const lastClipRef = useRef<boolean>(false);
     const { stream, analyser, audioContext, mediaRecorder } = mediaRecorderRef.current;
 
     // --- Stop Backend Recording Cycle ---
+    console.log("stopListening triggered → marking last clip");
     lastClipRef.current = true;
-    _stopBackendRecordingCycle(); // Stop the continuous backend clipping
-
+    
+      if (backendClipRecorderRef.current && backendClipRecorderRef.current.state === "recording") {
+        console.log("Stopping backend clip recorder to flush final partial clip..."); // ⭐ NEW
+        backendClipRecorderRef.current.stop(); // ⭐ NEW — THIS forces the final ~3 seconds clip to emit
+    }
     // Stop the full recording MediaRecorder
     if (mediaRecorder && mediaRecorder.state !== "inactive") {
       mediaRecorder.stop(); // This recorder collects all chunks for frontend playback

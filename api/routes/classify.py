@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from flask import Blueprint, jsonify, request, current_app
 from utils.audio_utils import load_audio, preprocess
 from utils.session_manager import add_clip_result
+from utils.session_manager import get_session
 
 # -----------------------
 # Blueprint setup
@@ -65,6 +66,40 @@ def upload_audio():
         wav = load_audio(wav_temp_path)
         mel = preprocess(wav).to(device)
 
+  # ------------------------------------------------------------
+        # TODO (Future Multi-Label Model Upgrade — NOT ACTIVE YET)
+        #
+        # Once the new multi-label model is trained, this route
+        # will return multiple classes with their confidence scores.
+        #
+        # The logic below will:
+        #   1. Iterate over all class probabilities.
+        #   2. Keep only those above a confidence threshold.
+        #   3. Return these as a list to the frontend.
+        #
+        # Example future logic:
+        #
+        #   threshold = 0.35  # 35% confidence
+        #   detections = []
+        #   for idx, class_name in enumerate(classes):
+        #       conf = probs[0][idx].item()
+        #       if conf >= threshold:
+        #           detections.append({
+        #               "class": class_name,
+        #               "confidence": round(conf * 100, 2)
+        #           })
+        #
+        #   if len(detections) == 0:
+        #       return jsonify({
+        #           "message": "Clip processed, but no confident detections.",
+        #           "detections": []
+        #       }), 200
+        #
+        # NOTE:
+        #   We are NOT using this logic right now because the model
+        #   currently only outputs a single best class prediction.
+        #
+        # ------------------------------------------------------------
         with torch.no_grad():
             outputs = model(mel)
             probs = F.softmax(outputs, dim=1)
@@ -88,6 +123,23 @@ def upload_audio():
             )
         except Exception as e:
             print(f"ERROR: Could not store clip in memory: {e}")
+            
+        if is_last_clip:
+            try:
+                session_data = get_session(recording_id)
+
+                print("\n================ SESSION COMPLETE ================")
+                print(f"Recording ID: {recording_id}")
+                print(f"Total clips received: {len(session_data.get('clips', {}))}")
+
+                sorted_clips = sorted(session_data["clips"].items(), key=lambda x: x[0])
+                for idx, clip_data in sorted_clips:
+                    print(f"Clip {idx}: {clip_data}")
+
+                print("===================================================\n")
+
+            except Exception as e:
+                print(f"ERROR: Could not retrieve full session: {e}")
 
         # -----------------------------------------
         # Return JSON (identical)
