@@ -132,9 +132,9 @@ def upload_audio():
                 print(f"Recording ID: {recording_id}")
                 print(f"Total clips received: {len(session_data.get('clips', {}))}")
 
-                sorted_clips = sorted(session_data["clips"].items(), key=lambda x: x[0])
-                for idx, clip_data in sorted_clips:
-                    print(f"Clip {idx}: {clip_data}")
+                sorted_clips = sorted(session_data["clips"], key=lambda c: c["index"])
+                for clip in sorted_clips:
+                    print(f"Clip {clip['index']}: {clip}")
 
                 print("===================================================\n")
 
