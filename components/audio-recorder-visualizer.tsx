@@ -289,13 +289,13 @@ const lastClipRef = useRef<boolean>(false);
   const _stopBackendRecordingCycle = () => {
      console.log("Stopping backend recording cycle...");
 
-        // ⭐ CHANGED — Only stop the timeout
+        // CHANGED — Only stop the timeout
     if (backendRecorderTimeoutId.current) {
         clearTimeout(backendRecorderTimeoutId.current);
         backendRecorderTimeoutId.current = null; // ⭐ NEW
     }
 
-    // ⭐ CHANGED — Stop recorder but DO NOT destroy it
+    // CHANGED — Stop recorder but DO NOT destroy it
     if (
         backendClipRecorderRef.current &&
         backendClipRecorderRef.current.state === "recording"
@@ -304,16 +304,7 @@ const lastClipRef = useRef<boolean>(false);
         backendClipRecorderRef.current.stop(); // ⭐ Important — allows onstop to fire
     }
 
-    // ❌ REMOVED — Do NOT detach onstop handler
-    // backendClipRecorderRef.current.onstop = null;
-
-    // ❌ REMOVED — Do NOT destroy recorder instance
-    // backendClipRecorderRef.current = null;
-
-    // ❌ REMOVED — Do NOT clear chunk buffer before it is processed
-    // backendClipChunks.current = [];
-
-    // ⭐ NEW — Mark that cleanup should occur AFTER onstop finishes
+    // NEW — Mark that cleanup should occur AFTER onstop finishes
     backendRecorderNeedsCleanupRef.current = true;
 
     console.log("Backend recording cycle stopped safely (awaiting onstop)."); // ⭐ NEW
