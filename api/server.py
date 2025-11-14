@@ -8,7 +8,7 @@ import torch.nn.functional as F
 
 from utils.config import DEVICE
 from utils.model_loader import load_ml_assets
-from utils.audio_utils import load_audio, preprocess
+from utils.vad_utils import load_vad_model
 
 from routes.home import home_bp
 from routes.classify import classify_bp
@@ -28,6 +28,16 @@ app.config["model"] = global_model
 app.config["classes"] = global_classes
 app.config["device"] = DEVICE
 print("DEBUG: ML model and classes loaded successfully.")
+
+# NEW: Load Silero VAD model at startup
+try:
+    vad_model, vad_helpers = load_vad_model()
+    app.config["vad_model"] = vad_model
+    app.config["vad_helpers"] = vad_helpers
+    print("DEBUG: Silero VAD model loaded successfully.")
+except Exception as e:
+    print(f"ERROR: Failed to load Silero VAD: {e}")
+    raise e
 
 # Register Blueprints
 app.register_blueprint(home_bp)
