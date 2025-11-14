@@ -102,3 +102,17 @@ def extract_nonspeech_segments(waveform, speech_timestamps):
         nonspeech_segments.append(waveform[:, prev_end:length])
 
     return nonspeech_segments
+
+def stitch_segments(segments_list):
+    
+    if len(segments_list) == 0:
+        return None
+
+    # If there is only one segment, return it unchanged
+    if len(segments_list) == 1:
+        return segments_list[0]
+
+    # Concatenate along the time dimension (dim=1)
+    stitched = torch.cat(segments_list, dim=1)
+
+    return stitched
