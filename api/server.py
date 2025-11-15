@@ -12,6 +12,7 @@ from utils.vad_utils import load_vad_model
 
 from routes.home import home_bp
 from routes.classify import classify_bp
+from routes.vad_primary import vad_bp
 
 # app instance
 app = Flask(__name__)
@@ -42,6 +43,7 @@ except Exception as e:
 # Register Blueprints
 app.register_blueprint(home_bp)
 app.register_blueprint(classify_bp)
+app.register_blueprint(vad_bp)
 
 
 # To run locally use 'python server.py'

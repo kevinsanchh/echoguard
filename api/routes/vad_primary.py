@@ -9,22 +9,25 @@ from utils.vad_utils import (
 import tempfile
 from pathlib import Path
 import os
+import torch  # NEW: for waveform stats / normalization
+
 
 vad_bp = Blueprint("vad", __name__, url_prefix="/process")
 
+
 @vad_bp.route("/vad", methods=["POST"])
 def process_vad():
-    
-     # 1. Basic request validation
+    # =========================================================
+    # 1. Basic request validation
+    # =========================================================
     if "audio" not in request.files:
-        print("[VAD] ERROR: No 'audio' file part in the request.")
+        print("\n[VAD] ERROR: No 'audio' file part in the request.\n")
         return jsonify({"error": "No audio file part in the request"}), 400
 
     audio_file = request.files["audio"]
     if audio_file.filename == "":
-        print("[VAD] ERROR: No selected file in the request.")
+        print("\n[VAD] ERROR: No selected file in the request.\n")
         return jsonify({"error": "No selected file"}), 400
-
 
     # Tracking fields (same pattern as /api/audio-upload)
     recording_id = request.form.get("recording_id", type=str)
@@ -32,118 +35,197 @@ def process_vad():
     is_last_clip_raw = request.form.get("is_last_clip")
 
     if recording_id is None or clip_index is None or is_last_clip_raw is None:
-        print("[VAD] ERROR: Missing one or more required tracking fields.")
+        print("\n[VAD] ERROR: Missing one or more required tracking fields.\n")
         return jsonify({
             "error": "Missing required fields: recording_id, clip_index, and is_last_clip are required."
         }), 400
 
     is_last_clip = is_last_clip_raw.lower() == "true"
 
+    # Router imports
+    from utils.pipeline_router import (
+        store_speech_segment,
+        store_nonspeech_segment,
+        route_non_speech_for_classification,
+        send_speech_to_transcription,
+    )
+
     temp_path = None
 
     try:
-        
+        # =====================================================
         # 2. Save temp WAV file
+        # =====================================================
         instance_path = current_app.instance_path
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav", dir=instance_path) as tmp:
             audio_file.save(tmp.name)
             temp_path = Path(tmp.name)
 
-        print(f"[VAD] DEBUG: Received WAV file: {audio_file.filename}. Saved to {temp_path}")
+        print(
+            "\n" + "=" * 70 +
+            f"\n[VAD] New clip received | recording_id={recording_id} | clip_index={clip_index}"
+            f"\n[VAD] Saved incoming WAV file '{audio_file.filename}' to {temp_path}"
+        )
 
-       # 3. Load waveform-
-        waveform = load_audio(temp_path)  # shape [1, num_samples]
+        # =====================================================
+        # 3. Load waveform
+        # =====================================================
+        waveform = load_audio(temp_path)  # expected shape [1, num_samples]
 
-         # 4. Access VAD model + helpers
+        if not isinstance(waveform, torch.Tensor):
+            waveform = torch.tensor(waveform)
+
+        # Ensure 2D [1, num_samples]
+        if waveform.ndim == 1:
+            waveform = waveform.unsqueeze(0)
+
+        # -------------------------
+        # 3a. Waveform diagnostics
+        # -------------------------
+        with torch.no_grad():
+            max_abs = waveform.abs().max().item()
+            mean_val = waveform.mean().item()
+            rms = torch.sqrt(torch.mean(waveform ** 2)).item()
+
+        print(
+            f"[VAD] Waveform stats for clip {clip_index} | "
+            f"shape={tuple(waveform.shape)}, max_abs={max_abs:.6f}, "
+            f"mean={mean_val:.6f}, rms={rms:.6f}"
+        )
+
+        # -------------------------
+        # 3b. Normalize / boost level for VAD ONLY
+        # -------------------------
+        # If the signal is extremely quiet but non-zero, scale it up so
+        # the VAD model sees a healthy dynamic range.
+        #
+        # NOTE: this does NOT change what is stored in session_manager,
+        # and it does NOT affect the CNN model later. It only affects
+        # the VAD step.
+        if max_abs > 1e-4:
+            target_peak = 0.9  # keep a little headroom
+            gain = target_peak / max_abs
+            waveform = (waveform * gain).clamp(-1.0, 1.0)
+
+            with torch.no_grad():
+                new_max = waveform.abs().max().item()
+                new_rms = torch.sqrt(torch.mean(waveform ** 2)).item()
+
+            print(
+                f"[VAD] Applied normalization for clip {clip_index} | "
+                f"gain={gain:.2f}, new_max_abs={new_max:.6f}, new_rms={new_rms:.6f}"
+            )
+        else:
+            print(
+                f"[VAD] Waveform for clip {clip_index} is extremely quiet (max_abs={max_abs:.6f}); "
+                f"skipping normalization."
+            )
+
+        # =====================================================
+        # 4. Access VAD model + helpers
+        # =====================================================
         vad_model = current_app.config["vad_model"]
         vad_helpers = current_app.config["vad_helpers"]
         sample_rate = current_app.config.get("sample_rate", 16000)
 
-        # 5. Run VAD on waveform
+        # =====================================================
+        # 5. Run VAD
+        # =====================================================
         speech_ts = run_vad_on_waveform(
             waveform=waveform,
             model=vad_model,
             vad_helpers=vad_helpers,
             sample_rate=sample_rate,
+            threshold=0.35,
         )
 
+        print(f"[VAD] Raw speech_ts for clip {clip_index}: {speech_ts}")
         speech_detected = len(speech_ts) > 0
-        print(f"[VAD] DEBUG: speech_detected={speech_detected} | speech_regions={len(speech_ts)}")
+        print(
+            f"[VAD] VAD result for clip {clip_index} | "
+            f"speech_detected={speech_detected} | speech_regions={len(speech_ts)}"
+        )
 
-         # 6. Extract speech + non-speech segments
+        # Detailed per-segment logging
+        for i, seg in enumerate(speech_ts):
+            start_s = seg["start"] / sample_rate
+            end_s   = seg["end"]   / sample_rate
+            dur_s   = end_s - start_s
+            print(f"[VAD] Speech region {i}: start={start_s:.2f}s, end={end_s:.2f}s, duration={dur_s:.2f}s")
+
+        # =====================================================
+        # 6. Extract segments
+        # =====================================================
         speech_segments = extract_speech_segments(waveform, speech_ts)
         nonspeech_segments = extract_nonspeech_segments(waveform, speech_ts)
 
+        print(f"[VAD] Extracted {len(speech_segments)} speech segments for clip {clip_index}")
+        print(f"[VAD] Extracted {len(nonspeech_segments)} non-speech segments for clip {clip_index}")
+
         print(
-            f"[VAD] DEBUG: recording_id={recording_id}, clip_index={clip_index}, "
-            f"num_speech_segments={len(speech_segments)}, num_nonspeech_segments={len(nonspeech_segments)}"
+            f"[VAD] Segments summary | recording_id={recording_id}, clip_index={clip_index}, "
+            f"num_speech_segments={len(speech_segments)}, "
+            f"num_nonspeech_segments={len(nonspeech_segments)}"
         )
 
-         # 7. Stitch non-speech segments (per 5-second clip)
+        # =====================================================
+        # 7. Stitch non-speech segments
+        # =====================================================
         stitched_nonspeech = stitch_segments(nonspeech_segments)
 
         if stitched_nonspeech is not None:
             print(
-                f"[VAD] DEBUG: Stitched non-speech segment for clip {clip_index} | "
+                f"[VAD] Stitched NON-SPEECH segment for clip {clip_index} | "
                 f"waveform shape={stitched_nonspeech.shape}"
             )
         else:
-            print(f"[VAD] DEBUG: No non-speech audio to stitch for clip {clip_index}.")
+            print(f"[VAD] No NON-SPEECH audio to stitch for clip {clip_index}.")
 
-        # ---------------------------------------------------------
-        # 8. TODO: Route non-speech -> /process/validate-non-speech
-        # ---------------------------------------------------------
-        # In a future step, this stitched_nonspeech waveform (plus recording_id, clip_index)
-        # will be passed to a validation endpoint, which will:
-        #   - check that audio is meaningful
-        #   - if valid, send it to the classifier (model inference)
-        #
-        # Example (future pseudocode):
-        #   forward_non_speech_to_validation(
-        #       recording_id=recording_id,
-        #       clip_index=clip_index,
-        #       waveform=stitched_nonspeech
-        #   )
-        #
-        # For now, we ONLY log what would happen.
-
+        # =====================================================
+        # 8. ROUTE NON-SPEECH → validate → model → store result
+        # =====================================================
         if stitched_nonspeech is not None:
-            print(
-                f"[VAD] FUTURE: Would forward NON-SPEECH for recording {recording_id}, "
-                f"clip {clip_index} to /process/validate-non-speech"
+            # Notify router (does NOT store waveform)
+            store_nonspeech_segment(recording_id, clip_index)
+
+            # Send waveform onward through pipeline
+            classification_result = route_non_speech_for_classification(
+                recording_id=recording_id,
+                clip_index=clip_index,
+                waveform=stitched_nonspeech,
+                is_last_clip=is_last_clip,
             )
 
-        # ---------------------------------------------------------
-        # 9. TODO: Store speech segments for later transcription
-        # ---------------------------------------------------------
-        # We will eventually:
-        #   - Store these speech_segments in a session-like structure keyed by recording_id
-        #   - When is_last_clip is True, gather all speech from all clips
-        #   - Then forward them (in order) to /process/transcribe
-        #
-        # For now, we ONLY log what would happen.
+            print(
+                f"[VAD] Routed NON-SPEECH for classification | "
+                f"recording={recording_id}, clip={clip_index}, "
+                f"classification_result={classification_result}"
+            )
+        else:
+            print(f"[VAD] No NON-SPEECH detected for clip {clip_index}; skipping classification routing.")
 
+        # =====================================================
+        # 9. STORE SPEECH SEGMENTS for later transcription
+        # =====================================================
         if len(speech_segments) > 0:
-            print(
-                f"[VAD] FUTURE: Would store {len(speech_segments)} SPEECH segments for "
-                f"recording {recording_id}, clip {clip_index} (to be transcribed later)."
-            )
+            store_speech_segment(recording_id, clip_index, speech_segments)
+            print(f"[VAD] Confirm: stored {len(speech_segments)} speech segment(s) for clip {clip_index}")
+        else:
+            print(f"[VAD] No SPEECH detected for clip {clip_index} (after VAD).")
 
+        # =====================================================
+        # 10. LAST CLIP → trigger transcription
+        # =====================================================
         if is_last_clip:
-            print(
-                f"[VAD] FUTURE: is_last_clip=True for recording {recording_id}. "
-                f"Later, we will trigger transcription of ALL stored speech segments "
-                f"and send the final transcript into the Gemini wrapper."
-            )
+            print(f"[VAD] LAST CLIP for recording {recording_id}. Triggering transcription...")
+            send_speech_to_transcription(recording_id)
 
-        # ---------------------------------------------------------
-        # 10. For now, return a debug-style JSON response
-        # ---------------------------------------------------------
-        # NOTE: Eventually, this endpoint may not need to return anything directly
-        # to the frontend once the full pipeline is wired together. For now, this
-        # is extremely useful for testing and development.
+        # =====================================================
+        # 11. Debug JSON response (TEMP ONLY)
+        # =====================================================
+        print("=" * 70 + "\n")
         return jsonify({
-            "message": "VAD processing completed for this clip (no downstream routing yet).",
+            "message": "VAD processing completed for this clip.",
             "recording_id": recording_id,
             "clip_index": clip_index,
             "speech_detected": speech_detected,
@@ -152,11 +234,10 @@ def process_vad():
         }), 200
 
     except Exception as e:
-        print(f"[VAD] ERROR: Failed to process VAD: {e}")
+        print(f"\n[VAD] ERROR: Failed to process VAD: {e}\n")
         return jsonify({"error": f"VAD processing failed: {str(e)}"}), 500
 
     finally:
-        # Cleanup temp file
         if temp_path and temp_path.exists():
             os.remove(temp_path)
             print(f"[VAD] DEBUG: Cleaned up temp WAV file: {temp_path}")

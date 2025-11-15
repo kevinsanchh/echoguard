@@ -325,9 +325,9 @@ const lastClipRef = useRef<boolean>(false);
       console.log(
         `Attempting to send FINAL WAV clip (${(audioBlob.size / 1024).toFixed(
           2
-        )} KB) to /api/audio-upload`
+        )} KB) to /process/vad`
       );
-      const response = await fetch("/api/audio-upload", {
+      const response = await fetch("http://localhost:8080/process/vad", {
         method: "POST",
         body: formData,
       });
@@ -480,8 +480,26 @@ const lastClipRef = useRef<boolean>(false);
       return;
     }
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      navigator.mediaDevices
-        .getUserMedia({ audio: true })
+     navigator.mediaDevices
+    .getUserMedia({
+      audio: {
+        sampleRate: 48000,
+        channelCount: 1,
+
+        // Standard Web Audio constraints
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+
+        // Allow Chrome-specific Google audio constraints
+        advanced: [
+          { googAutoGainControl: false },
+          { googNoiseSuppression: false },
+          { googEchoCancellation: false },
+          { googTypingNoiseDetection: false },
+        ],
+      } as any // <-- prevents TS errors while maintaining all fields
+    })
         .then((stream) => {
            // NEW: Initialize tracking state for this recording session 
           recordingIdRef.current = Date.now().toString(); // unique session ID

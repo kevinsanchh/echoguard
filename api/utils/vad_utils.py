@@ -25,7 +25,7 @@ def load_vad_model():
 # Run VAD on a waveform (PyTorch tensor)
 # ------------------------------------------------------------
 
-def run_vad_on_waveform(waveform, model, vad_helpers, sample_rate=16000):
+def run_vad_on_waveform(waveform, model, vad_helpers, sample_rate=16000, threshold=0.35):
     """
     Applies Silero VAD to a loaded waveform.
 
