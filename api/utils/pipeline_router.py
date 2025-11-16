@@ -18,6 +18,7 @@ from utils.session_manager import (
     add_speech_segments,
     add_nonspeech_result,
     mark_session_finished,
+    get_all_full_clips,
 )
 
 # -----------------------------------------------------------
@@ -142,25 +143,36 @@ def route_non_speech_for_classification(recording_id, clip_index, waveform, is_l
 # ROUTE SPEECH → TRANSCRIPTION
 # -----------------------------------------------------------
 
-def send_speech_to_transcription(recording_id):
-    """
-    Gather all stored speech segments for this recording,
-    stitch them inside the transcribe endpoint, and store final transcript.
-    """
-    print(f"[Router] Routing SPEECH segments for transcription | recording={recording_id}")
 
-    try:
-        response = requests.post(
-            TRANSCRIBE_URL,
-            data={"recording_id": recording_id}
-        )
-        result = response.json()
-    except Exception as e:
-        print(f"[Router] ERROR contacting transcription endpoint: {e}")
-        return None
+def send_full_clips_to_transcription(recording_id):
+    """
+    NEW FINAL METHOD:
+    Route ALL stored full 5-second RAW WAV clips to the transcription endpoint.
 
-    # Mark session finished after transcription
+    IMPORTANT:
+    - We do NOT combine, decode, or process these clips here.
+    - We only gather paths and send them.
+    - Real transcription logic will be implemented later.
+    """
+
+    # Logging — identical format to old function
+    print(f"[Router] Routing FULL CLIPS for transcription | recording={recording_id}")
+
+    # Retrieve all full clip file paths in sorted order
+    clip_paths = get_all_full_clips(recording_id)
+
+    print(f"[Router] Found {len(clip_paths)} FULL CLIPS for transcription | recording={recording_id}")
+
+    # FUTURE IMPLEMENTATION PLACEHOLDER:
+    # When the transcription endpoint is ready, we will POST these files.
+    # For now, just log them.
+    for idx, path in enumerate(clip_paths):
+        print(f"[Router] FULL CLIP {idx} | path={path}")
+
+    # Mark session finished for now
     mark_session_finished(recording_id)
 
-    print(f"[Router] Transcription complete for recording={recording_id}")
-    return result
+    print(f"[Router] Transcription trigger completed for recording={recording_id} (FULL CLIPS).")
+
+    # No response yet — transcription not implemented
+    return {"message": "Transcription trigger recorded (full clips)."}

@@ -1,3 +1,5 @@
+import os
+
 # -----------------------------------------------------------
 # GLOBAL IN-MEMORY STORE
 # -----------------------------------------------------------
@@ -13,13 +15,22 @@ session_recordings = {}
 # NON-SPEECH RESULT STORAGE (model outputs)
 # -----------------------------------------------------------
 
-def add_nonspeech_result(recording_id, clip_index, prediction, confidence, is_last_clip=False):
+
+def _ensure_session(recording_id):
+    """
+    Internal helper to ensure a session structure exists for a given recording_id.
+    This centralizes the default structure so we don't duplicate it.
+    """
     if recording_id not in session_recordings:
         session_recordings[recording_id] = {
             "nonspeech_results": [],
             "speech_segments": {},
-            "finished": False
+            "full_clips": {},
+            "finished": False,
         }
+
+def add_nonspeech_result(recording_id, clip_index, prediction, confidence, is_last_clip=False):
+    _ensure_session(recording_id)
 
     session_recordings[recording_id]["nonspeech_results"].append({
         "index": clip_index,
@@ -42,12 +53,7 @@ def add_nonspeech_result(recording_id, clip_index, prediction, confidence, is_la
 # -----------------------------------------------------------
 
 def add_speech_segments(recording_id, clip_index, segments_list):
-    if recording_id not in session_recordings:
-        session_recordings[recording_id] = {
-            "nonspeech_results": [],
-            "speech_segments": {},
-            "finished": False
-        }
+    _ensure_session(recording_id)
 
     session_recordings[recording_id]["speech_segments"][clip_index] = segments_list
 
@@ -60,6 +66,81 @@ def add_speech_segments(recording_id, clip_index, segments_list):
 # -----------------------------------------------------------
 # TEMPORARY WRAPPERS — Legacy Support for /api/audio-upload
 # -----------------------------------------------------------
+
+def add_full_clip(recording_id, clip_index, file_path):
+    """
+    Store the path to a full 5-second RAW WAV file for this recording/clip.
+
+    NOTE:
+    - file_path should point to a stable, renamed file such as:
+      instance/recording_<recording_id>_clip_<clip_index>.wav
+    - We do NOT load audio here; we only track the path for later use
+      by the transcription pipeline.
+    """
+    _ensure_session(recording_id)
+
+    session_recordings[recording_id]["full_clips"][clip_index] = str(file_path)
+
+
+
+def get_all_full_clips(recording_id):
+    """
+    Return a list of full-clip file paths for this recording_id,
+    ordered by clip_index (0, 1, 2, ...).
+
+    If the session or full_clips are missing, returns an empty list.
+    """
+    session = session_recordings.get(recording_id)
+    if not session:
+        return []
+
+    full_clips = session.get("full_clips", {})
+    ordered_paths = []
+
+    for clip_idx in sorted(full_clips.keys()):
+        ordered_paths.append(full_clips[clip_idx])
+
+    return ordered_paths
+
+
+def delete_all_full_clips(recording_id):
+    """
+    Delete all stored full-clip files on disk for this recording_id
+    and clear them from the in-memory session.
+
+    This should be called AFTER transcription has completed and we
+    no longer need the raw WAV files.
+    """
+    session = session_recordings.get(recording_id)
+    if not session:
+        print(f"[SessionManager] delete_all_full_clips: No session for recording {recording_id}.")
+        return
+
+    full_clips = session.get("full_clips", {})
+
+    for clip_idx, path in full_clips.items():
+        try:
+            if path and os.path.exists(path):
+                os.remove(path)
+                print(
+                    f"[SessionManager] Deleted FULL CLIP file for recording {recording_id}, "
+                    f"clip {clip_idx} | path={path}"
+                )
+            else:
+                print(
+                    f"[SessionManager] FULL CLIP file not found for recording {recording_id}, "
+                    f"clip {clip_idx} | path={path}"
+                )
+        except Exception as e:
+            print(
+                f"[SessionManager] ERROR deleting FULL CLIP file for recording {recording_id}, "
+                f"clip {clip_idx} | path={path} | error={e}"
+            )
+
+    # Clear in-memory references after deletion
+    session_recordings[recording_id]["full_clips"] = {}
+    print(f"[SessionManager] Cleared FULL CLIP paths for recording {recording_id}.")
+
 
 def add_clip_result(recording_id, clip_index, prediction, confidence, is_last_clip=False):
     """
