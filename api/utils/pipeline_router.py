@@ -25,9 +25,9 @@ from utils.session_manager import (
 # CONFIG (these will eventually be loaded from Flask config)
 # ----------------------------------------------------------
 
-VALIDATION_URL = Path("http://localhost:8080/process/validate-non-speech")
-MODEL_URL = Path("http://localhost:8080/process/model")
-TRANSCRIBE_URL = Path("http://localhost:8080/process/transcribe")
+VALIDATION_URL = "http://localhost:8080/process/validate-non-speech"
+MODEL_URL = "http://localhost:8080/process/model"
+TRANSCRIBE_URL = "http://localhost:8080/process/transcribe"
 
 
 # -----------------------------------------------------------
@@ -163,16 +163,22 @@ def send_full_clips_to_transcription(recording_id):
 
     print(f"[Router] Found {len(clip_paths)} FULL CLIPS for transcription | recording={recording_id}")
 
-    # FUTURE IMPLEMENTATION PLACEHOLDER:
-    # When the transcription endpoint is ready, we will POST these files.
-    # For now, just log them.
     for idx, path in enumerate(clip_paths):
         print(f"[Router] FULL CLIP {idx} | path={path}")
 
+    try:
+        response = requests.post(
+            TRANSCRIBE_URL,
+            data={"recording_id": recording_id}
+        )
+        result = response.json()
+    except Exception as e:
+        print(f"[Router] ERROR contacting transcription endpoint: {e}")
+        return None
     # Mark session finished for now
     mark_session_finished(recording_id)
 
     print(f"[Router] Transcription trigger completed for recording={recording_id} (FULL CLIPS).")
 
     # No response yet — transcription not implemented
-    return {"message": "Transcription trigger recorded (full clips)."}
+    return result

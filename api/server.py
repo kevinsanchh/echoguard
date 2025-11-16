@@ -13,6 +13,8 @@ from utils.vad_utils import load_vad_model
 from routes.home import home_bp
 from routes.classify import classify_bp
 from routes.vad_primary import vad_bp
+from routes.validate_non_speech import validate_bp
+from routes.transcribe import transcribe_bp
 
 # app instance
 app = Flask(__name__)
@@ -44,6 +46,8 @@ except Exception as e:
 app.register_blueprint(home_bp)
 app.register_blueprint(classify_bp)
 app.register_blueprint(vad_bp)
+app.register_blueprint(validate_bp)
+app.register_blueprint(transcribe_bp)
 
 
 # To run locally use 'python server.py'
