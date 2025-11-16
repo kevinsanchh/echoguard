@@ -48,3 +48,5 @@ api/venv/
 __pycache__/
 *.pyc
 api/__pycache__/
+
+pretrained_models/

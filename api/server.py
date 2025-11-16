@@ -30,14 +30,14 @@ app.config["classes"] = global_classes
 app.config["device"] = DEVICE
 print("DEBUG: ML model and classes loaded successfully.")
 
-# NEW: Load Silero VAD model at startup
+# Load RNNoise VAD model at startup (Silero-compatible interface)
 try:
     vad_model, vad_helpers = load_vad_model()
     app.config["vad_model"] = vad_model
     app.config["vad_helpers"] = vad_helpers
-    print("DEBUG: Silero VAD model loaded successfully.")
+    print("DEBUG: VAD model loaded successfully.")
 except Exception as e:
-    print(f"ERROR: Failed to load Silero VAD: {e}")
+    print(f"ERROR: Failed to load VAD model: {e}")
     raise e
 
 # Register Blueprints
