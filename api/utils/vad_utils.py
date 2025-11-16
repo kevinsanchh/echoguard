@@ -25,7 +25,14 @@ def load_vad_model():
 # Run VAD on a waveform (PyTorch tensor)
 # ------------------------------------------------------------
 
-def run_vad_on_waveform(waveform, model, vad_helpers, sample_rate=16000, threshold=0.35):
+def run_vad_on_waveform(
+        waveform, 
+        model, 
+        vad_helpers, 
+        sample_rate=16000, 
+        threshold: float= 0.25,
+        min_speech_duration_ms: int = 80,
+        min_silence_duration_ms: int = 100,):
     """
     Applies Silero VAD to a loaded waveform.
 
@@ -45,7 +52,13 @@ def run_vad_on_waveform(waveform, model, vad_helpers, sample_rate=16000, thresho
     if len(waveform.shape) == 2:
         waveform = waveform.squeeze(0)
 
-    speech_timestamps = get_speech_ts(waveform, model, sampling_rate=sample_rate)
+    speech_timestamps = get_speech_ts(
+        waveform, 
+        model, 
+        sampling_rate=sample_rate,
+        threshold=threshold,
+        min_speech_duration_ms=min_speech_duration_ms,
+        min_silence_duration_ms=min_silence_duration_ms,)
 
     return speech_timestamps
 

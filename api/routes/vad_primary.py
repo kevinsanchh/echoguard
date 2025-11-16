@@ -136,7 +136,9 @@ def process_vad():
             model=vad_model,
             vad_helpers=vad_helpers,
             sample_rate=sample_rate,
-            threshold=0.35,
+            threshold=0.25,
+            min_speech_duration_ms=80,
+            min_silence_duration_ms=0,
         )
 
         print(f"[VAD] Raw speech_ts for clip {clip_index}: {speech_ts}")
