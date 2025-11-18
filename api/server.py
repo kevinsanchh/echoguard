@@ -15,6 +15,7 @@ from routes.classify import classify_bp
 from routes.vad_primary import vad_bp
 from routes.validate_non_speech import validate_bp
 from routes.transcribe import transcribe_bp
+from routes.gemini_analysis import gemini_bp
 
 # app instance
 app = Flask(__name__)
@@ -48,6 +49,7 @@ app.register_blueprint(classify_bp)
 app.register_blueprint(vad_bp)
 app.register_blueprint(validate_bp)
 app.register_blueprint(transcribe_bp)
+app.register_blueprint(gemini_bp)
 
 
 # To run locally use 'python server.py'

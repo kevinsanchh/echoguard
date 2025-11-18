@@ -15,6 +15,8 @@ import torch
 import torchaudio
 from faster_whisper import WhisperModel
 from utils.audio_utils import resample_to_16k
+from utils.pipeline_router import send_to_gemini
+
 
 transcribe_bp = Blueprint("transcribe", __name__, url_prefix="/process")
 
@@ -272,6 +274,27 @@ def transcribe_full_recording():
     print(
         f"[Transcribe] Transcription pipeline complete for recording_id={recording_id}"
     )
+
+    try:
+        print(f"[Transcribe] Triggering Gemini wrapper | recording_id={recording_id}")
+        gemini_result = send_to_gemini(recording_id)
+
+        if gemini_result is not None:
+            print(
+                f"[Transcribe] Gemini wrapper response | recording_id={recording_id} | "
+                f"status={gemini_result.get('status')}"
+            )
+        else:
+            print(
+                f"[Transcribe] WARNING: Gemini wrapper returned None "
+                f"| recording_id={recording_id}"
+            )
+
+    except Exception as gem_err:
+        print(
+            f"[Transcribe] ERROR: Failed to trigger Gemini wrapper | "
+            f"recording_id={recording_id} | error={gem_err}"
+        )
 
     return jsonify({
         "recording_id": recording_id,
