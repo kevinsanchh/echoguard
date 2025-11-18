@@ -4,8 +4,16 @@ import { motion, AnimatePresence, Variants, Transition } from "framer-motion";
 import { Button } from "./ui/button";
 import { CircleX, Settings } from "lucide-react";
 
-const DashboardDialog = () => {
+const DashboardDialog = ({
+  toggleModal: externalToggleModal,
+  externalIsOpen,
+}: {
+  toggleModal?: () => void;
+  externalIsOpen?: boolean;
+}) => {
   const [isOpen, setIsOpen] = useState(false);
+  const isVisible = externalIsOpen !== undefined ? externalIsOpen : isOpen;
+
   const modalRef = useRef<HTMLDivElement>(null);
 
   const defaultVariants: Variants = {
@@ -34,17 +42,20 @@ const DashboardDialog = () => {
   };
 
   const toggleModal = () => {
+    if (externalToggleModal) return externalToggleModal();
     setIsOpen(!isOpen);
   };
 
   const closeModal = () => {
+    if (externalToggleModal) return externalToggleModal();
     setIsOpen(false);
   };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
-        closeModal();
+        if (externalToggleModal) externalToggleModal();
+        else closeModal();
       }
     };
 
@@ -62,13 +73,15 @@ const DashboardDialog = () => {
   return (
     <>
       {/* Modal toggle */}
-      <Button onClick={toggleModal} size="icon" variant="outline" className=" border-neutral-200">
-        <Settings size={15} />
-      </Button>
+      {!externalToggleModal && (
+        <Button onClick={toggleModal} size="icon" variant="outline" className=" border-neutral-200">
+          <Settings size={15} />
+        </Button>
+      )}
 
       {/* Main modal */}
       <AnimatePresence mode="wait">
-        {isOpen && (
+        {isVisible && (
           <motion.div
             key="modal-backdrop"
             id="default-modal"
