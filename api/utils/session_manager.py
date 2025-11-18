@@ -7,14 +7,15 @@ import os
 # Each session now stores:
 # - nonspeech_results: predictions for stitched non-speech segments
 # - speech_segments: raw speech waveforms (per clip)
+# - full_clips: stored WAV file paths for full 5-second chunks
+# - transcription: text + segment timestamps (added)
 # - finished: whether last clip was processed
 session_recordings = {}
 
 
 # -----------------------------------------------------------
-# NON-SPEECH RESULT STORAGE (model outputs)
+# INTERNAL HELPER
 # -----------------------------------------------------------
-
 
 def _ensure_session(recording_id):
     """
@@ -27,7 +28,16 @@ def _ensure_session(recording_id):
             "speech_segments": {},
             "full_clips": {},
             "finished": False,
+            "transcription": {          # <-- ADDED
+                "text": None,
+                "segments": []
+            },
         }
+
+
+# -----------------------------------------------------------
+# NON-SPEECH RESULT STORAGE (model outputs)
+# -----------------------------------------------------------
 
 def add_nonspeech_result(recording_id, clip_index, prediction, confidence, is_last_clip=False):
     _ensure_session(recording_id)
@@ -64,31 +74,21 @@ def add_speech_segments(recording_id, clip_index, segments_list):
 
 
 # -----------------------------------------------------------
-# TEMPORARY WRAPPERS — Legacy Support for /api/audio-upload
+# FULL CLIP STORAGE (raw 5-sec WAVs)
 # -----------------------------------------------------------
 
 def add_full_clip(recording_id, clip_index, file_path):
     """
     Store the path to a full 5-second RAW WAV file for this recording/clip.
-
-    NOTE:
-    - file_path should point to a stable, renamed file such as:
-      instance/recording_<recording_id>_clip_<clip_index>.wav
-    - We do NOT load audio here; we only track the path for later use
-      by the transcription pipeline.
     """
     _ensure_session(recording_id)
 
     session_recordings[recording_id]["full_clips"][clip_index] = str(file_path)
 
 
-
 def get_all_full_clips(recording_id):
     """
-    Return a list of full-clip file paths for this recording_id,
-    ordered by clip_index (0, 1, 2, ...).
-
-    If the session or full_clips are missing, returns an empty list.
+    Return a list of full-clip file paths ordered by clip_index.
     """
     session = session_recordings.get(recording_id)
     if not session:
@@ -105,11 +105,7 @@ def get_all_full_clips(recording_id):
 
 def delete_all_full_clips(recording_id):
     """
-    Delete all stored full-clip files on disk for this recording_id
-    and clear them from the in-memory session.
-
-    This should be called AFTER transcription has completed and we
-    no longer need the raw WAV files.
+    After transcription completes, delete all WAV files and clear memory.
     """
     session = session_recordings.get(recording_id)
     if not session:
@@ -137,17 +133,15 @@ def delete_all_full_clips(recording_id):
                 f"clip {clip_idx} | path={path} | error={e}"
             )
 
-    # Clear in-memory references after deletion
     session_recordings[recording_id]["full_clips"] = {}
     print(f"[SessionManager] Cleared FULL CLIP paths for recording {recording_id}.")
 
 
+# -----------------------------------------------------------
+# LEGACY WRAPPERS
+# -----------------------------------------------------------
+
 def add_clip_result(recording_id, clip_index, prediction, confidence, is_last_clip=False):
-    """
-    TEMPORARY:
-    Wrapper for legacy /api/audio-upload endpoint.
-    Internally maps to add_nonspeech_result so nothing breaks.
-    """
     add_nonspeech_result(
         recording_id=recording_id,
         clip_index=clip_index,
@@ -158,10 +152,6 @@ def add_clip_result(recording_id, clip_index, prediction, confidence, is_last_cl
 
 
 def finish_session(recording_id):
-    """
-    TEMPORARY:
-    Legacy wrapper so the old endpoint can still mark the session finished.
-    """
     mark_session_finished(recording_id)
 
 
@@ -197,3 +187,25 @@ def get_session(recording_id):
 
 def get_all_sessions():
     return session_recordings
+
+
+# -----------------------------------------------------------
+# NEW — TRANSCRIPTION STORAGE
+# -----------------------------------------------------------
+
+def store_transcription(recording_id, text, segments):
+    """
+    Stores the final Faster-Whisper transcription for a recording.
+    Does NOT delete or modify any existing stored session data.
+    """
+    if recording_id not in session_recordings:
+        print(f"[SessionManager] ERROR: Tried to store transcription for missing recording_id={recording_id}")
+        return
+
+    session_recordings[recording_id]["transcription"]["text"] = text
+    session_recordings[recording_id]["transcription"]["segments"] = segments
+
+    print(
+        f"[SessionManager] Stored TRANSCRIPTION | recording_id={recording_id} | "
+        f"chars={len(text)} | segments={len(segments)}"
+    )
