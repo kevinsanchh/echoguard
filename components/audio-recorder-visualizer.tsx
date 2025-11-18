@@ -318,8 +318,6 @@ const lastClipRef = useRef<boolean>(false);
     formData.append("recording_id", recordingIdRef.current || "unknown");
     formData.append("clip_index", clipIndexRef.current.toString());
     formData.append("is_last_clip", lastClipRef.current ? "true" : "false");
-    
-    clipIndexRef.current += 1;
 
     try {
       console.log(
@@ -331,6 +329,8 @@ const lastClipRef = useRef<boolean>(false);
         method: "POST",
         body: formData,
       });
+
+       clipIndexRef.current += 1;
 
       console.log(
         "Response received for FINAL WAV upload. Status:",
@@ -344,18 +344,22 @@ const lastClipRef = useRef<boolean>(false);
         try {
           const responseData = await response.json();
           console.log("Backend JSON response data:", responseData);
-
           // NEW: Push the prediction into ML flags state
-          if (responseData.prediction && responseData.confidence) {
-            setMlFlags((prev) => [
+          // NEW: Handle new multi-detection model output
+        if (responseData.detections && Array.isArray(responseData.detections)) {
+          const now = new Date().toLocaleTimeString();
+
+          responseData.detections.forEach((det: { class: string; confidence: number }) => {
+            setMlFlags(prev => [
               ...prev,
               {
-                label: responseData.prediction,
-                confidence: responseData.confidence,
-                time: new Date().toLocaleTimeString(),
-              },
+                label: det.class,
+                confidence: det.confidence,
+                time: now,
+              }
             ]);
-          }
+          });
+        }
         } catch (jsonError) {
           console.warn(
             "Could not parse JSON response from backend (might be empty or non-JSON success).",
@@ -581,6 +585,8 @@ const lastClipRef = useRef<boolean>(false);
     // --- Stop Backend Recording Cycle ---
     console.log("stopListening triggered → marking last clip");
     lastClipRef.current = true;
+
+    await new Promise(res => setTimeout(res, 350));
     
       if (backendClipRecorderRef.current && backendClipRecorderRef.current.state === "recording") {
         console.log("Stopping backend clip recorder to flush final partial clip..."); // ⭐ NEW
