@@ -15,6 +15,7 @@ This file only sends data to the correct endpoints and stores intermediate state
 import requests
 from pathlib import Path
 import torch
+import requests
 from utils.session_manager import (
     add_speech_segments,
     add_nonspeech_result,
@@ -209,3 +210,40 @@ def send_full_clips_to_transcription(recording_id):
 
     # No response yet — transcription not implemented
     return result
+
+def send_to_gemini(recording_id):
+    """
+    Trigger the Gemini wrapper after transcription finishes.
+
+    Behavior:
+    - Sends only 'recording_id'.
+    - Does NOT assume transcription is ready.
+    - Returns Gemini readiness status:
+         * waiting_for_transcription_and_model_results
+         * waiting_for_transcription
+         * waiting_for_model_results
+         * ready
+    - No Gemini logic is executed here (wrapper only).
+    """
+
+    print(f"[Router] Routing to GEMINI endpoint | recording={recording_id}")
+
+    try:
+        response = requests.post(
+            "http://localhost:8080/process/gemini",
+            data={"recording_id": recording_id}
+        )
+        result = response.json()
+
+        print(
+            f"[Router] Gemini response for recording={recording_id}: "
+            f"status={result.get('status')}, "
+            f"has_transcription={result.get('has_transcription')}, "
+            f"has_model_results={result.get('has_model_results')}"
+        )
+
+        return result
+
+    except Exception as e:
+        print(f"[Router] ERROR contacting Gemini endpoint: {e}")
+        return None
