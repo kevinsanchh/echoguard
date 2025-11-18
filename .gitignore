@@ -50,3 +50,7 @@ __pycache__/
 api/__pycache__/
 
 pretrained_models/
+
+instance/
+api/instance/
+**/instance/
