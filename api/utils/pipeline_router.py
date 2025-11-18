@@ -14,6 +14,7 @@ This file only sends data to the correct endpoints and stores intermediate state
 
 import requests
 from pathlib import Path
+import torch
 from utils.session_manager import (
     add_speech_segments,
     add_nonspeech_result,
@@ -73,58 +74,100 @@ def store_speech_segment(recording_id, clip_index, segments):
 def route_non_speech_for_classification(recording_id, clip_index, waveform, is_last_clip=False):
     """
     Full pipeline for NON-SPEECH classification:
-    1. Send waveform to validation endpoint.
-    2. If valid → send to model endpoint.
-    3. Store result in session manager.
-    4. Return result to frontend.
+    1. Convert stitched NON-SPEECH tensor into WAV bytes.
+    2. Send to validation endpoint.
+    3. If valid → send to model endpoint.
+    4. If invalid → skip (do NOT store or send placeholder results).
+    5. Return model result or None.
 
-    NOTE: REAL inference happens in the model endpoint.
+    NOTE:
+    - REAL inference happens in the model endpoint.
+    - Waveform is a PyTorch tensor (channels, samples).
     """
 
     print(f"[Router] Routing NON-SPEECH for classification | recording={recording_id}, clip={clip_index}")
 
-    # ----------------------------------------------
-    # Step 1: Validate non-speech data
-    # ----------------------------------------------
+    # --------------------------------------------------------------
+    # Step 1: Convert tensor → WAV bytes (in-memory)
+    # --------------------------------------------------------------
+    import io
+    import torchaudio
+
+    try:
+        buffer = io.BytesIO()
+        sample_rate = 16000  # consistent with VAD & loading
+
+        # Ensure correct shape
+        if not isinstance(waveform, torch.Tensor):
+            waveform = torch.tensor(waveform)
+
+        if waveform.ndim == 1:
+            waveform = waveform.unsqueeze(0)
+
+        torchaudio.save(buffer, waveform, sample_rate, format="wav")
+        buffer.seek(0)
+
+    except Exception as e:
+        print(f"[Router] ERROR encoding NON-SPEECH to WAV bytes: {e}")
+        return None
+
+    # --------------------------------------------------------------
+    # Step 2: Validate non-speech
+    # --------------------------------------------------------------
     try:
         response = requests.post(
             VALIDATION_URL,
-            files={"audio": waveform},
-            data={"recording_id": recording_id, "clip_index": clip_index}
+            files={"audio": ("nonspeech.wav", buffer, "audio/wav")},
+            data={
+                "recording_id": recording_id,
+                "clip_index": clip_index
+            }
         )
         response_data = response.json()
     except Exception as e:
         print(f"[Router] ERROR contacting validation endpoint: {e}")
         return None
 
+    # --------------------------------------------------------------
+    # Step 3: Handle validation result
+    # --------------------------------------------------------------
     if not response_data.get("valid", False):
-        print(f"[Router] Validation FAILED for clip {clip_index}. Sending empty detection to FE.")
-        add_nonspeech_result(recording_id, clip_index, prediction="none", confidence=0.0, is_last_clip=is_last_clip)
-        return {"prediction": "none", "confidence": 0.0}
+        print(
+            f"[Router] Validation FAILED for NON-SPEECH | "
+            f"recording={recording_id}, clip={clip_index}. "
+            f"Skipping model classification."
+        )
+        # IMPORTANT: Per architecture, DO NOT send placeholder results.
+        return None
 
-    # ----------------------------------------------
-    # Step 2: Valid → Send to model endpoint
-    # ----------------------------------------------
-    print(f"[Router] Validation PASSED for clip {clip_index}. Sending to model endpoint.")
+    print(
+        f"[Router] Validation PASSED for NON-SPEECH | "
+        f"recording={recording_id}, clip={clip_index}. Sending to model endpoint."
+    )
 
+    # --------------------------------------------------------------
+    # Step 4: Send to model endpoint
+    # --------------------------------------------------------------
     try:
+        buffer.seek(0)  # rewind for model
         model_response = requests.post(
             MODEL_URL,
-            files={"audio": waveform},
+            files={"audio": ("nonspeech.wav", buffer, "audio/wav")},
             data={
                 "recording_id": recording_id,
                 "clip_index": clip_index,
-                "is_last_clip": str(is_last_clip)
+                "is_last_clip": str(is_last_clip),
             }
         )
         model_data = model_response.json()
+
     except Exception as e:
         print(f"[Router] ERROR contacting model endpoint: {e}")
         return None
 
-    # ----------------------------------------------
-    # Step 3: Store result
-    # ----------------------------------------------
+    # --------------------------------------------------------------
+    # Step 5: Store model result
+    # --------------------------------------------------------------
     prediction = model_data.get("prediction")
     confidence = model_data.get("confidence")
 

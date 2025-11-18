@@ -1,6 +1,13 @@
 # routes/validate_non_speech.py
 
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
+from pathlib import Path
+import tempfile
+import os
+import torch
+
+from utils.audio_utils import load_audio
+from utils.validation_utils import validate_nonspeech_waveform
 
 validate_bp = Blueprint("validate_non_speech", __name__, url_prefix="/process")
 
@@ -8,19 +15,21 @@ validate_bp = Blueprint("validate_non_speech", __name__, url_prefix="/process")
 @validate_bp.route("/validate-non-speech", methods=["POST"])
 def validate_non_speech():
     """
-     Validation endpoint for stitched NON-SPEECH audio.
+    Validation endpoint for stitched NON-SPEECH audio.
 
-    CURRENT BEHAVIOR (stub / scaffold):
-    - Ensures the request contains:
-        - files["audio"]
-        - form["recording_id"]
-        - form["clip_index"]
-    - Logs these values.
-    - Always returns {"valid": true} for now.
+    ROLE:
+    - Receives a NON-SPEECH waveform from VAD → router.
+    - Saves it temporarily.
+    - Loads it using shared audio loader.
+    - Computes waveform stats (duration, RMS, max_abs, etc.).
+    - Uses utils/validation_utils.py to decide validity.
+    - Returns JSON {"valid": true/false}.
+    - Logs all details using EchoGuard's detailed style.
 
-    FUTURE:
-    - We can inspect the waveform here (e.g., energy, duration)
-      and reject silence / low-information clips.
+    IMPORTANT:
+    - Invalid clips are IGNORED by the router (no model call).
+    - Valid clips proceed to /process/model.
+    - No predictions are generated here.
     """
 
     # --------------------------------------------------------
@@ -49,23 +58,89 @@ def validate_non_speech():
         }), 400
 
     # --------------------------------------------------------
-    # 2. Logging for now (no real audio inspection yet)
+    # 2. Save the incoming NON-SPEECH waveform to a temp WAV
     # --------------------------------------------------------
-    print(
-        f"[Validate] Received NON-SPEECH clips for validation | "
-        f"recording_id={recording_id}, clip_index={clip_index}, "
-        f"filename='{audio_file.filename}'"
-    )
+    instance_path = current_app.instance_path
+    Path(instance_path).mkdir(parents=True, exist_ok=True)
 
-    # NOTE: In the future, we can load+analyze the audio to decide validity.
-    # For now, always mark as valid so the model endpoint is always hit.
-    is_valid = True
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=".wav", dir=instance_path
+        ) as tmp:
+            audio_file.save(tmp.name)
+            temp_path = Path(tmp.name)
 
-    print(
-        f"[Validate] Validation result for recording_id={recording_id}, "
-        f"clip_index={clip_index} | valid={is_valid}"
-    )
+        print(
+            "\n" + "=" * 70 +
+            f"\n[Validate] New NON-SPEECH clip received for validation | "
+            f"recording_id={recording_id}, clip_index={clip_index}"
+            f"\n[Validate] Saved NON-SPEECH WAV file '{audio_file.filename}' to {temp_path}"
+        )
 
-    return jsonify({
-        "valid": is_valid
-    }), 200
+        # ----------------------------------------------------
+        # 3. Load waveform tensor
+        # ----------------------------------------------------
+        waveform = load_audio(temp_path)
+
+        if not isinstance(waveform, torch.Tensor):
+            waveform = torch.tensor(waveform)
+
+        if waveform.ndim == 1:  # ensure (channels, samples)
+            waveform = waveform.unsqueeze(0)
+
+        # ----------------------------------------------------
+        # 4. Validate waveform using utils.validation_utils
+        # ----------------------------------------------------
+        sample_rate = current_app.config.get("sample_rate", 16000)
+
+        is_valid, failure_reasons, stats = validate_nonspeech_waveform(
+            waveform, sample_rate
+        )
+
+        # ----------------------------------------------------
+        # 5. Log stats (EchoGuard debug style)
+        # ----------------------------------------------------
+        print(
+            f"[Validate] Waveform stats | recording_id={recording_id}, clip_index={clip_index} | "
+            f"channels={stats['num_channels']}, samples={stats['num_samples']}, "
+            f"duration={stats['duration_sec']:.3f}s, "
+            f"max_abs={stats['max_abs']:.6f}, rms={stats['rms']:.6f}"
+        )
+
+        # ----------------------------------------------------
+        # 6. Log validation result
+        # ----------------------------------------------------
+        if is_valid:
+            print(
+                f"[Validate] Validation result | recording_id={recording_id}, "
+                f"clip_index={clip_index} | valid=True"
+            )
+        else:
+            print(
+                f"[Validate] Validation result | recording_id={recording_id}, "
+                f"clip_index={clip_index} | valid=False | reasons={failure_reasons}"
+            )
+
+        print("=" * 70 + "\n")
+
+        # ----------------------------------------------------
+        # 7. Return validation decision
+        # ----------------------------------------------------
+        return jsonify({"valid": is_valid}), 200
+
+    except Exception as e:
+        print(
+            f"\n[Validate] ERROR: Failed to validate NON-SPEECH clip | "
+            f"recording_id={recording_id}, clip_index={clip_index} | error={e}\n"
+        )
+        return jsonify({"error": f"Validation failed: {str(e)}"}), 500
+
+    finally:
+        # Always clean up temp file
+        if temp_path is not None and temp_path.exists():
+            try:
+                os.remove(temp_path)
+                print(f"[Validate] Cleaned up temp file: {temp_path}")
+            except Exception as cleanup_err:
+                print(f"[Validate] WARNING: Failed to delete temp file {temp_path}: {cleanup_err}")
