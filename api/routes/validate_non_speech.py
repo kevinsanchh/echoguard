@@ -24,7 +24,6 @@ def validate_non_speech():
     - Computes waveform stats (duration, RMS, max_abs, etc.).
     - Uses utils/validation_utils.py to decide validity.
     - Returns JSON {"valid": true/false}.
-    - Logs all details using EchoGuard's detailed style.
 
     IMPORTANT:
     - Invalid clips are IGNORED by the router (no model call).
@@ -32,9 +31,7 @@ def validate_non_speech():
     - No predictions are generated here.
     """
 
-    # --------------------------------------------------------
     # 1. Basic presence checks
-    # --------------------------------------------------------
     if "audio" not in request.files:
         print("\n[Validate] ERROR: No 'audio' file part in the request.\n")
         return jsonify({"error": "No audio file part in the request"}), 400
@@ -57,9 +54,7 @@ def validate_non_speech():
             "error": f"Missing required fields: {', '.join(missing_fields)}"
         }), 400
 
-    # --------------------------------------------------------
     # 2. Save the incoming NON-SPEECH waveform to a temp WAV
-    # --------------------------------------------------------
     instance_path = current_app.instance_path
     Path(instance_path).mkdir(parents=True, exist_ok=True)
 
@@ -78,9 +73,7 @@ def validate_non_speech():
             f"\n[Validate] Saved NON-SPEECH WAV file '{audio_file.filename}' to {temp_path}"
         )
 
-        # ----------------------------------------------------
         # 3. Load waveform tensor
-        # ----------------------------------------------------
         waveform = load_audio(temp_path)
 
         if not isinstance(waveform, torch.Tensor):
@@ -89,18 +82,13 @@ def validate_non_speech():
         if waveform.ndim == 1:  # ensure (channels, samples)
             waveform = waveform.unsqueeze(0)
 
-        # ----------------------------------------------------
-        # 4. Validate waveform using utils.validation_utils
-        # ----------------------------------------------------
+        # 4. Validate waveform 
         sample_rate = current_app.config.get("sample_rate", 16000)
 
         is_valid, failure_reasons, stats = validate_nonspeech_waveform(
             waveform, sample_rate
         )
 
-        # ----------------------------------------------------
-        # 5. Log stats (EchoGuard debug style)
-        # ----------------------------------------------------
         print(
             f"[Validate] Waveform stats | recording_id={recording_id}, clip_index={clip_index} | "
             f"channels={stats['num_channels']}, samples={stats['num_samples']}, "
@@ -108,9 +96,7 @@ def validate_non_speech():
             f"max_abs={stats['max_abs']:.6f}, rms={stats['rms']:.6f}"
         )
 
-        # ----------------------------------------------------
-        # 6. Log validation result
-        # ----------------------------------------------------
+        # 5. Log validation result
         if is_valid:
             print(
                 f"[Validate] Validation result | recording_id={recording_id}, "
@@ -124,9 +110,7 @@ def validate_non_speech():
 
         print("=" * 70 + "\n")
 
-        # ----------------------------------------------------
-        # 7. Return validation decision
-        # ----------------------------------------------------
+        # 6. Return validation decision
         return jsonify({"valid": is_valid}), 200
 
     except Exception as e:

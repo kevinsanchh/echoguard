@@ -110,9 +110,7 @@ def upload_audio():
 
         print(f"DEBUG: Predicted: {pred_class} ({confidence:.2f}% confidence)")
 
-        # -----------------------------------------
         # Store clip result in memory
-        # -----------------------------------------
         try:
             add_clip_result(
                 recording_id=recording_id,
@@ -141,9 +139,7 @@ def upload_audio():
             except Exception as e:
                 print(f"ERROR: Could not retrieve full session: {e}")
 
-        # -----------------------------------------
-        # Return JSON (identical)
-        # -----------------------------------------
+        # Return JSON
         return jsonify({
             "message": f"Audio file {audio_file.filename} received and processed for prediction!",
             "prediction": pred_class,

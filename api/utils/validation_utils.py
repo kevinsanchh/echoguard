@@ -67,9 +67,7 @@ def validate_nonspeech_waveform(waveform: torch.Tensor, sample_rate: int):
         "rms": rms,
     }
 
-    # ------------------------------------------------------------
     # Validation thresholds (LENIENT)
-    # ------------------------------------------------------------
     failure_reasons = []
     is_valid = True
 

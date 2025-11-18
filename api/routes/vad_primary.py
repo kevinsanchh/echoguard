@@ -9,16 +9,15 @@ from utils.vad_utils import (
 import tempfile
 from pathlib import Path
 import os
-import torch  # NEW: for waveform stats / normalization
+import torch  
 
 vad_bp = Blueprint("vad", __name__, url_prefix="/process")
 
 
 @vad_bp.route("/vad", methods=["POST"])
 def process_vad():
-    # =========================================================
+
     # 1. Basic request validation
-    # =========================================================
     if "audio" not in request.files:
         print("\n[VAD] ERROR: No 'audio' file part in the request.\n")
         return jsonify({"error": "No audio file part in the request"}), 400
@@ -47,16 +46,13 @@ def process_vad():
         send_full_clips_to_transcription,
     )
 
-    # NEW IMPORT — SessionManager full-clip storage
     from utils.session_manager import add_full_clip
 
     temp_path = None
     final_clip_path = None
 
     try:
-        # =====================================================
         # 2. Save temp WAV file
-        # =====================================================
         instance_path = current_app.instance_path
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav", dir=instance_path) as tmp:
             audio_file.save(tmp.name)
@@ -68,10 +64,7 @@ def process_vad():
             f"\n[VAD] Saved incoming WAV file '{audio_file.filename}' to {temp_path}"
         )
 
-        # =====================================================
-        # >>> NEW ADDED CODE <<<
-        # Rename the temp file to a stable, identifiable name
-        # =====================================================
+
         final_clip_path = Path(instance_path) / f"recording_{recording_id}_clip_{clip_index}.wav"
         os.replace(temp_path, final_clip_path)
         temp_path = final_clip_path  # update reference to the new name
@@ -82,11 +75,9 @@ def process_vad():
             f"[VAD] Stored full WAV clip for transcription | "
             f"recording_id={recording_id} | clip_index={clip_index} | path={final_clip_path}"
         )
-        # =====================================================
 
-        # =====================================================
+
         # 3. Load waveform
-        # =====================================================
         waveform = load_audio(final_clip_path)
 
         if not isinstance(waveform, torch.Tensor):
@@ -106,7 +97,7 @@ def process_vad():
             f"mean={mean_val:.6f}, rms={rms:.6f}"
         )
 
-        # NORMALIZATION — unchanged
+        # NORMALIZATION
         if max_abs > 1e-4:
             target_peak = 0.9
             gain = target_peak / max_abs
@@ -126,16 +117,12 @@ def process_vad():
                 f"(max_abs={max_abs:.6f}); skipping normalization."
             )
 
-        # =====================================================
         # 4. Access VAD model + helpers
-        # =====================================================
         vad_model = current_app.config["vad_model"]
         vad_helpers = current_app.config["vad_helpers"]
         sample_rate = current_app.config.get("sample_rate", 16000)
 
-        # =====================================================
         # 5. Run VAD
-        # =====================================================
         speech_ts = run_vad_on_waveform(
             waveform=waveform,
             model=vad_model,
@@ -159,9 +146,7 @@ def process_vad():
             dur_s   = end_s - start_s
             print(f"[VAD] Speech region {i}: start={start_s:.2f}s, end={end_s:.2f}s, duration={dur_s:.2f}s")
 
-        # =====================================================
         # 6. Extract segments
-        # =====================================================
         speech_segments = extract_speech_segments(waveform, speech_ts)
         nonspeech_segments = extract_nonspeech_segments(waveform, speech_ts)
 
@@ -174,9 +159,7 @@ def process_vad():
             f"num_nonspeech_segments={len(nonspeech_segments)}"
         )
 
-        # =====================================================
         # 7. Stitch non-speech
-        # =====================================================
         stitched_nonspeech = stitch_segments(nonspeech_segments)
 
         if stitched_nonspeech is not None:
@@ -187,9 +170,7 @@ def process_vad():
         else:
             print(f"[VAD] No NON-SPEECH audio to stitch for clip {clip_index}.")
 
-        # =====================================================
         # 8. Route non-speech for classification
-        # =====================================================
         if stitched_nonspeech is not None:
             store_nonspeech_segment(recording_id, clip_index)
 
@@ -208,26 +189,20 @@ def process_vad():
         else:
             print(f"[VAD] No NON-SPEECH detected for clip {clip_index}; skipping classification routing.")
 
-        # =====================================================
         # 9. Store speech segments (unchanged)
-        # =====================================================
         if len(speech_segments) > 0:
             store_speech_segment(recording_id, clip_index, speech_segments)
             print(f"[VAD] Confirm: stored {len(speech_segments)} speech segment(s) for clip {clip_index}")
         else:
             print(f"[VAD] No SPEECH detected for clip {clip_index} (after VAD).")
 
-        # =====================================================
         # 10. LAST CLIP
-        # =====================================================
         if is_last_clip:
             print(f"[VAD] LAST CLIP for recording {recording_id}. Triggering transcription...")
             send_full_clips_to_transcription(recording_id)
 
 
-        # =====================================================
         # 11. TEMP DEBUG RESPONSE
-        # =====================================================
         print("=" * 70 + "\n")
         return jsonify({
             "message": "VAD processing completed for this clip.",

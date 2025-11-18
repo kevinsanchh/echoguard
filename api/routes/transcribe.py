@@ -34,13 +34,9 @@ def _get_whisper_model():
     if _WHISPER_MODEL is not None:
         return _WHISPER_MODEL, _WHISPER_DEVICE
 
-    # Device selection: Option A (your choice)
     device = "cpu"
     compute_type = "int8"
 
-    # Reasonable compute_type defaults:
-    # - GPU: float16 for speed/accuracy
-    # - CPU: int8 for memory efficiency
     compute_type = "float16" if device == "cuda" else "int8"
 
     print(
@@ -81,23 +77,16 @@ def transcribe_full_recording():
         - Does NOT mark session as finished.
         - Returns JSON with status="error".
 
-    NOTE:
-    - This implementation focuses on correctness and clear logging.
-    - Storing transcript in SessionManager will be added in a later step.
     """
 
-    # --------------------------------------------------------
     # 1. Extract required field
-    # --------------------------------------------------------
     recording_id = request.form.get("recording_id", type=str)
 
     if recording_id is None:
         print("\n[Transcribe] ERROR: Missing 'recording_id' in request.\n")
         return jsonify({"error": "Missing required field 'recording_id'"}), 400
 
-    # --------------------------------------------------------
     # 2. Retrieve FULL CLIPS for this recording
-    # --------------------------------------------------------
     clip_paths = get_all_full_clips(recording_id)
 
     print(
@@ -122,9 +111,7 @@ def transcribe_full_recording():
         f"| recording_id={recording_id}"
     )
 
-    # --------------------------------------------------------
     # 3. Load and concatenate all WAV clips
-    # --------------------------------------------------------
     waveforms = []
     base_sample_rate = None
 
@@ -188,9 +175,7 @@ def transcribe_full_recording():
             "message": f"Failed to prepare audio for transcription: {str(e)}"
         }), 500
 
-    # --------------------------------------------------------
     # 4. Run Faster-Whisper transcription
-    # --------------------------------------------------------
     try:
         model, device = _get_whisper_model()
 
@@ -250,16 +235,14 @@ def transcribe_full_recording():
             f"[Transcribe] ERROR: Faster-Whisper transcription failed | "
             f"recording_id={recording_id} | error={e}"
         )
-        # IMPORTANT (your choice B): do NOT delete clips, do NOT mark finished.
+
         return jsonify({
             "recording_id": recording_id,
             "status": "error",
             "message": f"Transcription failed: {str(e)}"
         }), 500
 
-    # --------------------------------------------------------
     # 5. Cleanup on SUCCESS (delete clips + mark finished)
-    # --------------------------------------------------------
     try:
         delete_all_full_clips(recording_id)
         print(
@@ -278,11 +261,6 @@ def transcribe_full_recording():
         f"[Transcribe] Transcription pipeline complete for recording_id={recording_id}"
     )
 
-    # --------------------------------------------------------
-    # 6. Return result (for now, also return transcript & segments)
-    #    NOTE: In a later step, we will store this inside SessionManager
-    #    and possibly simplify the response if needed.
-    # --------------------------------------------------------
     return jsonify({
         "recording_id": recording_id,
         "transcript": full_text,

@@ -55,9 +55,7 @@ def store_nonspeech_segment(recording_id, clip_index):
 #     )
 
 
-# -----------------------------------------------------------
 # STORE SPEECH SEGMENTS (raw speech)
-# -----------------------------------------------------------
 
 def store_speech_segment(recording_id, clip_index, segments):
     """
@@ -67,9 +65,7 @@ def store_speech_segment(recording_id, clip_index, segments):
     print(f"[Router] Stored SPEECH segments for recording={recording_id}, clip={clip_index}")
 
 
-# -----------------------------------------------------------
 # ROUTE NON-SPEECH → VALIDATION → MODEL → STORE RESULT
-# -----------------------------------------------------------
 
 def route_non_speech_for_classification(recording_id, clip_index, waveform, is_last_clip=False):
     """
@@ -111,9 +107,7 @@ def route_non_speech_for_classification(recording_id, clip_index, waveform, is_l
         print(f"[Router] ERROR encoding NON-SPEECH to WAV bytes: {e}")
         return None
 
-    # --------------------------------------------------------------
     # Step 2: Validate non-speech
-    # --------------------------------------------------------------
     try:
         response = requests.post(
             VALIDATION_URL,
@@ -128,9 +122,7 @@ def route_non_speech_for_classification(recording_id, clip_index, waveform, is_l
         print(f"[Router] ERROR contacting validation endpoint: {e}")
         return None
 
-    # --------------------------------------------------------------
     # Step 3: Handle validation result
-    # --------------------------------------------------------------
     if not response_data.get("valid", False):
         print(
             f"[Router] Validation FAILED for NON-SPEECH | "
@@ -145,9 +137,7 @@ def route_non_speech_for_classification(recording_id, clip_index, waveform, is_l
         f"recording={recording_id}, clip={clip_index}. Sending to model endpoint."
     )
 
-    # --------------------------------------------------------------
     # Step 4: Send to model endpoint
-    # --------------------------------------------------------------
     try:
         buffer.seek(0)  # rewind for model
         model_response = requests.post(
@@ -165,9 +155,7 @@ def route_non_speech_for_classification(recording_id, clip_index, waveform, is_l
         print(f"[Router] ERROR contacting model endpoint: {e}")
         return None
 
-    # --------------------------------------------------------------
     # Step 5: Store model result
-    # --------------------------------------------------------------
     prediction = model_data.get("prediction")
     confidence = model_data.get("confidence")
 
@@ -182,11 +170,7 @@ def route_non_speech_for_classification(recording_id, clip_index, waveform, is_l
     return model_data
 
 
-# -----------------------------------------------------------
 # ROUTE SPEECH → TRANSCRIPTION
-# -----------------------------------------------------------
-
-
 def send_full_clips_to_transcription(recording_id):
     """
     NEW FINAL METHOD:

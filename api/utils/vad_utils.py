@@ -42,8 +42,7 @@ def run_vad_on_waveform(
         min_silence_duration_ms: int = 250,
     ):
     """
-    Applies RNNoise-based VAD to a loaded waveform while preserving the
-    Silero-style API and output format.
+    Applies RNNoise-based VAD to a loaded waveform.
 
     Parameters:
         waveform (torch.Tensor): Tensor shape [1, num_samples]
@@ -63,9 +62,7 @@ def run_vad_on_waveform(
         matching the expectations of downstream code.
     """
 
-    # --------------------------------------------------------
     # 1. Unpack RNNoise config
-    # --------------------------------------------------------
     target_sr = vad_helpers.get("target_sample_rate", 48000)
     frame_size = vad_helpers.get("frame_size", 480)
 
@@ -76,9 +73,7 @@ def run_vad_on_waveform(
     # Ensure float tensor on CPU
     waveform = waveform.to(dtype=torch.float32, device="cpu")
 
-    # --------------------------------------------------------
     # 2. Resample to RNNoise target sample rate if needed
-    # --------------------------------------------------------
     if sample_rate != target_sr:
         resampler = torchaudio.transforms.Resample(
             orig_freq=sample_rate,
@@ -88,9 +83,7 @@ def run_vad_on_waveform(
     else:
         resampled = waveform
 
-    # --------------------------------------------------------
     # 3. Convert to int16 numpy [channels, num_samples]
-    # --------------------------------------------------------
     # Clamp to [-1, 1], then scale to int16 [-32768, 32767]
     resampled = resampled.clamp(-1.0, 1.0)
     resampled_int16 = (resampled * 32767.0).to(torch.int16).cpu().numpy()
@@ -98,9 +91,7 @@ def run_vad_on_waveform(
     if resampled_int16.ndim == 1:
         resampled_int16 = resampled_int16.reshape(1, -1)  # [1, num_samples]
 
-    # --------------------------------------------------------
     # 4. Run RNNoise and collect per-frame speech probabilities
-    # --------------------------------------------------------
     denoiser = model  # RNNoise instance
     speech_mask = []  # list[bool], one per 10 ms frame
 
@@ -121,9 +112,7 @@ def run_vad_on_waveform(
 
     frame_duration_ms = (frame_size / target_sr) * 1000.0  # ~10 ms
 
-    # --------------------------------------------------------
     # 5. Convert frame-level mask → raw speech segments
-    # --------------------------------------------------------
     segments_frames = []
     in_speech = False
     start_frame = 0
@@ -144,9 +133,7 @@ def run_vad_on_waveform(
     if not segments_frames:
         return []
 
-    # --------------------------------------------------------
     # 6. Enforce min_speech_duration_ms
-    # --------------------------------------------------------
     min_speech_frames = max(
         1,
         int(np.ceil(min_speech_duration_ms / frame_duration_ms)),
@@ -160,9 +147,7 @@ def run_vad_on_waveform(
     if not segments_frames:
         return []
 
-    # --------------------------------------------------------
     # 7. Merge segments separated by short silence
-    # --------------------------------------------------------
     min_silence_frames = int(np.floor(min_silence_duration_ms / frame_duration_ms))
 
     merged_segments = []
@@ -179,9 +164,7 @@ def run_vad_on_waveform(
 
     merged_segments.append((cur_start, cur_end))
 
-    # --------------------------------------------------------
     # 8. Convert frame indices → sample indices in ORIGINAL sample_rate
-    # --------------------------------------------------------
     sr_ratio = float(sample_rate) / float(target_sr)
     speech_timestamps = []
 
@@ -200,9 +183,7 @@ def run_vad_on_waveform(
 
     return speech_timestamps
 
-# ------------------------------------------------------------
 # Extract segments based on timestamps
-# ------------------------------------------------------------
 
 def extract_speech_segments(waveform, speech_timestamps):
     """
