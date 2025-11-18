@@ -14,6 +14,7 @@ from pathlib import Path
 import torch
 import torchaudio
 from faster_whisper import WhisperModel
+from utils.audio_utils import resample_to_16k
 
 transcribe_bp = Blueprint("transcribe", __name__, url_prefix="/process")
 
@@ -163,6 +164,17 @@ def transcribe_full_recording():
             f"sample_rate={base_sample_rate}, total_samples={num_samples}, "
             f"duration={duration_sec:.3f}s"
         )
+        
+        orig_sr = base_sample_rate
+        orig_duration = duration_sec
+
+        merged_waveform_16k, new_sr = resample_to_16k(
+            waveform=merged_waveform,
+            orig_sr=orig_sr,
+            target_sr=16000,
+        )
+
+        print(f"[Transcribe] Resampled merged waveform to 16kHz | ")
 
     except Exception as e:
         print(
@@ -180,7 +192,7 @@ def transcribe_full_recording():
         model, device = _get_whisper_model()
 
         # Convert to numpy 1D array for Faster-Whisper
-        audio_np = merged_waveform.squeeze(0).numpy()
+        audio_np = merged_waveform_16k.squeeze(0).numpy()
 
         print(
             f"[Transcribe] Starting Faster-Whisper transcription | "

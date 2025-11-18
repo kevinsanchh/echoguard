@@ -3,9 +3,6 @@ import torch.nn.functional as F
 import torchaudio
 from utils.config import SAMPLE_RATE, MAX_DURATION
 
-# -----------------------
-# Audio loading
-# -----------------------
 
 def load_audio(path):
     """Load and normalize a WAV file to a fixed duration."""
@@ -28,10 +25,6 @@ def load_audio(path):
     return wav
 
 
-# -----------------------
-# Preprocessing
-# -----------------------
-
 def preprocess(wav):
     """Convert waveform into a normalized mel spectrogram."""
     transform = torchaudio.transforms.MelSpectrogram(
@@ -51,3 +44,38 @@ def preprocess(wav):
 
     # Add batch dimension (1, 3, H, W)
     return mel_db.unsqueeze(0)
+
+
+def ensure_mono(waveform: torch.Tensor) -> torch.Tensor:
+    """
+    Ensure waveform is [1, N] mono.
+    - If 1D: unsqueeze to [1, N]
+    - If multi-channel: average across channels.
+    """
+    if waveform.ndim == 1:
+        waveform = waveform.unsqueeze(0)
+
+    if waveform.shape[0] > 1:
+        waveform = waveform.mean(dim=0, keepdim=True)
+
+    return waveform.to(torch.float32)
+
+
+def resample_to_16k(waveform: torch.Tensor, orig_sr: int, target_sr: int = 16000):
+    """
+    Convert any waveform to mono, float32, and target_sr (default 16 kHz).
+
+    Returns:
+        resampled_waveform (torch.Tensor [1, N]), new_sample_rate (int)
+    """
+    waveform = ensure_mono(waveform)
+
+    if orig_sr == target_sr:
+        return waveform, target_sr
+
+    resampled = torchaudio.functional.resample(
+        waveform,
+        orig_sr,
+        target_sr
+    )
+    return resampled, target_sr
