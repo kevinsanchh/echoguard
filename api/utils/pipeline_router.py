@@ -247,3 +247,21 @@ def send_to_gemini(recording_id):
     except Exception as e:
         print(f"[Router] ERROR contacting Gemini endpoint: {e}")
         return None
+    
+def send_cnn_model_result_to_frontend(recording_id, clip_index, classification_result):
+    """
+    Prepare a clean JSON packet from the model result to send back to the frontend.
+    This does NOT talk to the client directly; it just shapes the data.
+    """
+    if classification_result is None:
+        return None
+
+    return {
+        "recording_id": recording_id,
+        "clip_index": clip_index,
+        "prediction": classification_result.get("prediction"),
+        "confidence": classification_result.get("confidence"),
+        "detections": classification_result.get("detections", []),
+        "threshold": classification_result.get("threshold"),
+        "is_last_clip": classification_result.get("is_last_clip", False),
+    }

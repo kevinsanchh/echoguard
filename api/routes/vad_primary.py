@@ -6,6 +6,13 @@ from utils.vad_utils import (
     extract_nonspeech_segments,
     stitch_segments,
 )
+from utils.pipeline_router import (
+    store_speech_segment,
+    store_nonspeech_segment,
+    route_non_speech_for_classification,
+    send_full_clips_to_transcription,
+    send_cnn_model_result_to_frontend, 
+)
 import tempfile
 from pathlib import Path
 import os
@@ -162,6 +169,8 @@ def process_vad():
         # 7. Stitch non-speech
         stitched_nonspeech = stitch_segments(nonspeech_segments)
 
+        classification_result = None
+
         if stitched_nonspeech is not None:
             print(
                 f"[VAD] Stitched NON-SPEECH segment for clip {clip_index} | "
@@ -203,15 +212,26 @@ def process_vad():
 
 
         # 11. TEMP DEBUG RESPONSE
-        print("=" * 70 + "\n")
-        return jsonify({
+           # 11. Build response back to frontend (include CNN detections if present)
+        response_payload = {
             "message": "VAD processing completed for this clip.",
             "recording_id": recording_id,
             "clip_index": clip_index,
             "speech_detected": speech_detected,
             "num_speech_segments": len(speech_segments),
             "num_nonspeech_segments": len(nonspeech_segments),
-        }), 200
+        }
+
+           # If we got a classification result from the CNN model, merge it in
+        if classification_result is not None:
+            cnn_payload = send_cnn_model_result_to_frontend(
+                recording_id, clip_index, classification_result
+            )
+            if cnn_payload is not None:
+                response_payload.update(cnn_payload)
+
+        print("=" * 70 + "\n")
+        return jsonify(response_payload), 200
 
     except Exception as e:
         print(f"\n[VAD] ERROR: Failed to process VAD: {e}\n")
