@@ -7,11 +7,10 @@ from pathlib import Path
 import torch.nn.functional as F
 
 from utils.config import DEVICE
-from utils.model_loader import load_ml_assets
 from utils.vad_utils import load_vad_model
+from utils.model_loader import load_model
 
 from routes.home import home_bp
-from routes.classify import classify_bp
 from routes.vad_primary import vad_bp
 from routes.validate_non_speech import validate_bp
 from routes.transcribe import transcribe_bp
@@ -28,7 +27,7 @@ if not os.path.exists(app.instance_path):
 
 # Load ML model and classes at startup once
 # GLOBAL MODEL AND CLASSES
-global_model, global_classes = load_ml_assets()
+global_model, global_classes = load_model()
 app.config["model"] = global_model
 app.config["classes"] = global_classes
 app.config["device"] = DEVICE
@@ -46,7 +45,6 @@ except Exception as e:
 
 # Register Blueprints
 app.register_blueprint(home_bp)
-app.register_blueprint(classify_bp)
 app.register_blueprint(vad_bp)
 app.register_blueprint(validate_bp)
 app.register_blueprint(transcribe_bp)

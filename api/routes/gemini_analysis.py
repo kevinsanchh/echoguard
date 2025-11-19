@@ -46,6 +46,7 @@ LATER (FUTURE MESSAGE):
 
 from flask import Blueprint, request, jsonify
 from utils.session_manager import get_session
+from utils.config import GEMINI_API_KEY
 
 gemini_bp = Blueprint("gemini", __name__, url_prefix="/process")
 

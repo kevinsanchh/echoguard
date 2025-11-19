@@ -54,3 +54,5 @@ pretrained_models/
 instance/
 api/instance/
 **/instance/
+
+api/assets/
