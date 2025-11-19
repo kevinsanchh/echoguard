@@ -13,6 +13,7 @@ load_dotenv()
 MODEL_PATH = Path("assets/multi-label_model.pth")
 CSV_PATH = Path("assets/dataset_train.csv")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_PROMPT = os.getenv("GEMINI_PROMPT")
 
 # Audio processing parameters
 SAMPLE_RATE = 16000
