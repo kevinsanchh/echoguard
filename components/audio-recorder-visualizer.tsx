@@ -15,6 +15,7 @@ import {
   Settings,
   Settings2,
   ArrowLeftFromLine,
+  AudioLines,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
@@ -1143,7 +1144,9 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
                 <TooltipTrigger asChild>
                   <Button
                     onClick={startRecording}
-                    size={"icon"}
+                    className="bg-neutral-300 bg-gradient-to-b from-black/80 to-black border-black border"
+                    size={"lg"}
+                    // className="aspect-square"
                     disabled={!ffmpegLoaded || recordingPhase === "loading_ffmpeg"}
                   >
                     {recordingPhase === "loading_ffmpeg" ? (
@@ -1158,7 +1161,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
                     {" "}
                     {recordingPhase === "loading_ffmpeg"
                       ? "Loading FFmpeg..."
-                      : "Start Listening"}{" "}
+                      : "Start Monitoring"}{" "}
                   </span>
                 </TooltipContent>
               </Tooltip>
@@ -1166,7 +1169,8 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
                 <TooltipTrigger asChild>
                   <Button
                     onClick={() => fileInputRef.current?.click()}
-                    size={"icon"}
+                    size={"lg"}
+                    className="bg-neutral-200 text-neutral-600 hover:bg-neutral-300 border border-neutral-300"
                     disabled={!ffmpegLoaded || recordingPhase === "loading_ffmpeg"}
                   >
                     <Upload size={15} />
@@ -1185,7 +1189,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
                   onClick={stopListening}
                   size={"icon"}
                   variant={"destructive"}
-                  className="mr-2"
+                  className="mr-2 "
                 >
                   <CircleStop size={15} />
                 </Button>
@@ -1231,7 +1235,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
           <Popover open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
             <PopoverTrigger asChild>
               <Button size="icon" variant="outline" className=" border-neutral-200">
-                <Settings2 size={15} />
+                <AudioLines size={15} />
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-48 p-4" align="end">
