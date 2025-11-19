@@ -35,9 +35,7 @@ def _ensure_session(recording_id):
         }
 
 
-# -----------------------------------------------------------
 # NON-SPEECH RESULT STORAGE (model outputs)
-# -----------------------------------------------------------
 
 def add_nonspeech_result(recording_id, clip_index, prediction, confidence, is_last_clip=False):
     _ensure_session(recording_id)
@@ -58,9 +56,7 @@ def add_nonspeech_result(recording_id, clip_index, prediction, confidence, is_la
         print(f"[SessionManager] Session {recording_id} marked FINISHED (last clip).")
 
 
-# -----------------------------------------------------------
 # SPEECH SEGMENT STORAGE (raw tensors for transcription)
-# -----------------------------------------------------------
 
 def add_speech_segments(recording_id, clip_index, segments_list):
     _ensure_session(recording_id)
@@ -73,9 +69,7 @@ def add_speech_segments(recording_id, clip_index, segments_list):
     )
 
 
-# -----------------------------------------------------------
 # FULL CLIP STORAGE (raw 5-sec WAVs)
-# -----------------------------------------------------------
 
 def add_full_clip(recording_id, clip_index, file_path):
     """
@@ -137,9 +131,7 @@ def delete_all_full_clips(recording_id):
     print(f"[SessionManager] Cleared FULL CLIP paths for recording {recording_id}.")
 
 
-# -----------------------------------------------------------
 # LEGACY WRAPPERS
-# -----------------------------------------------------------
 
 def add_clip_result(recording_id, clip_index, prediction, confidence, is_last_clip=False):
     add_nonspeech_result(
@@ -155,9 +147,7 @@ def finish_session(recording_id):
     mark_session_finished(recording_id)
 
 
-# -----------------------------------------------------------
 # RETRIEVAL HELPERS
-# -----------------------------------------------------------
 
 def get_all_speech_segments(recording_id):
     session = session_recordings.get(recording_id)
@@ -189,9 +179,7 @@ def get_all_sessions():
     return session_recordings
 
 
-# -----------------------------------------------------------
-# NEW — TRANSCRIPTION STORAGE
-# -----------------------------------------------------------
+# TRANSCRIPTION STORAGE
 
 def store_transcription(recording_id, text, segments):
     """
