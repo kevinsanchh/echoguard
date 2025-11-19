@@ -14,6 +14,7 @@ import {
   Upload,
   Settings,
   Settings2,
+  ArrowLeftFromLine,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
 import DashboardDialog from "./dashboard-dialog";
+import Link from "next/link";
 // --- End ffmpeg.wasm imports ---
 
 type Props = {
@@ -112,10 +114,9 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
 
   const latestRecordingPhase = useRef<RecordingPhase>("idle"); // To store the latest recordingPhase
 
-const recordingIdRef = useRef<string | null>(null);
-const clipIndexRef = useRef<number>(0);
-const lastClipRef = useRef<boolean>(false);
-
+  const recordingIdRef = useRef<string | null>(null);
+  const clipIndexRef = useRef<number>(0);
+  const lastClipRef = useRef<boolean>(false);
 
   // Sync latestRecordingPhase ref with recordingPhase state
   useEffect(() => {
@@ -287,21 +288,18 @@ const lastClipRef = useRef<boolean>(false);
   };
 
   const _stopBackendRecordingCycle = () => {
-     console.log("Stopping backend recording cycle...");
+    console.log("Stopping backend recording cycle...");
 
-        // CHANGED — Only stop the timeout
+    // CHANGED — Only stop the timeout
     if (backendRecorderTimeoutId.current) {
-        clearTimeout(backendRecorderTimeoutId.current);
-        backendRecorderTimeoutId.current = null; // ⭐ NEW
+      clearTimeout(backendRecorderTimeoutId.current);
+      backendRecorderTimeoutId.current = null; // ⭐ NEW
     }
 
     // CHANGED — Stop recorder but DO NOT destroy it
-    if (
-        backendClipRecorderRef.current &&
-        backendClipRecorderRef.current.state === "recording"
-    ) {
-        console.log("Backend clip recorder stopping safely..."); // ⭐ NEW
-        backendClipRecorderRef.current.stop(); // ⭐ Important — allows onstop to fire
+    if (backendClipRecorderRef.current && backendClipRecorderRef.current.state === "recording") {
+      console.log("Backend clip recorder stopping safely..."); // ⭐ NEW
+      backendClipRecorderRef.current.stop(); // ⭐ Important — allows onstop to fire
     }
 
     // NEW — Mark that cleanup should occur AFTER onstop finishes
@@ -314,7 +312,7 @@ const lastClipRef = useRef<boolean>(false);
     const formData = new FormData();
     // *** MODIFICATION: Now expects WAV, not WebM, from frontend ffmpeg.wasm ***
     formData.append("audio", audioBlob, `audio_final_${Date.now()}.wav`);
-      // NEW: Add session-tracking fields 
+    // NEW: Add session-tracking fields
     formData.append("recording_id", recordingIdRef.current || "unknown");
     formData.append("clip_index", clipIndexRef.current.toString());
     formData.append("is_last_clip", lastClipRef.current ? "true" : "false");
@@ -330,7 +328,7 @@ const lastClipRef = useRef<boolean>(false);
         body: formData,
       });
 
-       clipIndexRef.current += 1;
+      clipIndexRef.current += 1;
 
       console.log(
         "Response received for FINAL WAV upload. Status:",
@@ -346,20 +344,20 @@ const lastClipRef = useRef<boolean>(false);
           console.log("Backend JSON response data:", responseData);
           // NEW: Push the prediction into ML flags state
           // NEW: Handle new multi-detection model output
-        if (responseData.detections && Array.isArray(responseData.detections)) {
-          const now = new Date().toLocaleTimeString();
+          if (responseData.detections && Array.isArray(responseData.detections)) {
+            const now = new Date().toLocaleTimeString();
 
-          responseData.detections.forEach((det: { class: string; confidence: number }) => {
-            setMlFlags(prev => [
-              ...prev,
-              {
-                label: det.class,
-                confidence: det.confidence,
-                time: now,
-              }
-            ]);
-          });
-        }
+            responseData.detections.forEach((det: { class: string; confidence: number }) => {
+              setMlFlags((prev) => [
+                ...prev,
+                {
+                  label: det.class,
+                  confidence: det.confidence,
+                  time: now,
+                },
+              ]);
+            });
+          }
         } catch (jsonError) {
           console.warn(
             "Could not parse JSON response from backend (might be empty or non-JSON success).",
@@ -484,31 +482,31 @@ const lastClipRef = useRef<boolean>(false);
       return;
     }
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-     navigator.mediaDevices
-    .getUserMedia({
-      audio: {
-        sampleRate: 48000,
-        channelCount: 1,
+      navigator.mediaDevices
+        .getUserMedia({
+          audio: {
+            sampleRate: 48000,
+            channelCount: 1,
 
-        // Standard Web Audio constraints
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
+            // Standard Web Audio constraints
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
 
-        // Allow Chrome-specific Google audio constraints
-        advanced: [
-          { googAutoGainControl: false },
-          { googNoiseSuppression: false },
-          { googEchoCancellation: false },
-          { googTypingNoiseDetection: false },
-        ],
-      } as any // <-- prevents TS errors while maintaining all fields
-    })
+            // Allow Chrome-specific Google audio constraints
+            advanced: [
+              { googAutoGainControl: false },
+              { googNoiseSuppression: false },
+              { googEchoCancellation: false },
+              { googTypingNoiseDetection: false },
+            ],
+          } as any, // <-- prevents TS errors while maintaining all fields
+        })
         .then((stream) => {
-           // NEW: Initialize tracking state for this recording session 
+          // NEW: Initialize tracking state for this recording session
           recordingIdRef.current = Date.now().toString(); // unique session ID
-          clipIndexRef.current = 0;                       // reset clip index
-          lastClipRef.current = false;                   // not final clip yet
+          clipIndexRef.current = 0; // reset clip index
+          lastClipRef.current = false; // not final clip yet
           setRecordingPhase("recording");
           setIsRecording(true);
           setTimer(0);
@@ -586,11 +584,11 @@ const lastClipRef = useRef<boolean>(false);
     console.log("stopListening triggered → marking last clip");
     lastClipRef.current = true;
 
-    await new Promise(res => setTimeout(res, 350));
-    
-      if (backendClipRecorderRef.current && backendClipRecorderRef.current.state === "recording") {
-        console.log("Stopping backend clip recorder to flush final partial clip..."); // ⭐ NEW
-        backendClipRecorderRef.current.stop(); // ⭐ NEW — THIS forces the final ~3 seconds clip to emit
+    await new Promise((res) => setTimeout(res, 350));
+
+    if (backendClipRecorderRef.current && backendClipRecorderRef.current.state === "recording") {
+      console.log("Stopping backend clip recorder to flush final partial clip..."); // ⭐ NEW
+      backendClipRecorderRef.current.stop(); // ⭐ NEW — THIS forces the final ~3 seconds clip to emit
     }
     // Stop the full recording MediaRecorder
     if (mediaRecorder && mediaRecorder.state !== "inactive") {
@@ -1263,6 +1261,16 @@ const lastClipRef = useRef<boolean>(false);
           <div>
             <DashboardDialog />
           </div>
+        </div>
+
+        <div className="absolute top-4 left-4 z-50  flex gap-2">
+          <Link
+            href="/"
+            className="cursor-pointer active:bg-neutral-100 active:scale-95 ease-in-out duration-100 border-neutral-200 p-1  rounded-md border px-2 flex justify-center items-center text-neutral-700 gap-2"
+          >
+            <ArrowLeftFromLine size={15} />
+            <h1 className="text-sm font-medium">Back</h1>
+          </Link>
         </div>
       </div>
       {/* ML Flags Display */}
