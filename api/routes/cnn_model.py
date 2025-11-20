@@ -153,8 +153,8 @@ def classify_nonspeech_clip():
             "recording_id": recording_id,
             "clip_index": clip_index,
             "prediction": top_class,
-            "confidence": top_conf_pct,   # top-1 prediction, in percent
-            "detections": detections,     # multi-label detections at threshold
+            "confidence": top_conf_pct,  
+            "detections": detections,  
             "threshold": THRESHOLD,
             "is_last_clip": is_last_clip,
         }), 200

@@ -265,3 +265,25 @@ def send_cnn_model_result_to_frontend(recording_id, clip_index, classification_r
         "threshold": classification_result.get("threshold"),
         "is_last_clip": classification_result.get("is_last_clip", False),
     }
+
+def send_gemini_result_to_frontend(recording_id, analysis):
+    """
+    Prepare a clean JSON packet from the Gemini analysis to send back to the frontend.
+    This mirrors the behavior of send_cnn_model_result_to_frontend(), but only
+    for the FINAL Gemini output (risk/benefit scores).
+
+    This function does NOT send anything directly to the client. It only shapes data.
+    The endpoint that calls the Gemini wrapper will return this to the frontend.
+    """
+    if not analysis:
+        return None
+
+    return {
+        "recording_id": recording_id,
+        "gemini_result": {
+            "risk_score": analysis.get("risk_score"),
+            "benefit_score": analysis.get("benefit_score"),
+            "risk_reasoning": analysis.get("risk_reasoning"),
+            "benefit_reasoning": analysis.get("benefit_reasoning"),
+        },
+    }

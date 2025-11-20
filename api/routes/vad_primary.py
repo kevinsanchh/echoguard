@@ -7,11 +7,8 @@ from utils.vad_utils import (
     stitch_segments,
 )
 from utils.pipeline_router import (
-    store_speech_segment,
-    store_nonspeech_segment,
-    route_non_speech_for_classification,
-    send_full_clips_to_transcription,
     send_cnn_model_result_to_frontend, 
+    send_gemini_result_to_frontend,
 )
 import tempfile
 from pathlib import Path
@@ -57,6 +54,7 @@ def process_vad():
 
     temp_path = None
     final_clip_path = None
+    send_full_clips_result = None
 
     try:
         # 2. Save temp WAV file
@@ -208,7 +206,7 @@ def process_vad():
         # 10. LAST CLIP
         if is_last_clip:
             print(f"[VAD] LAST CLIP for recording {recording_id}. Triggering transcription...")
-            send_full_clips_to_transcription(recording_id)
+            send_full_clips_result = send_full_clips_to_transcription(recording_id)
 
 
         # 11. TEMP DEBUG RESPONSE
@@ -229,6 +227,15 @@ def process_vad():
             )
             if cnn_payload is not None:
                 response_payload.update(cnn_payload)
+
+        # If this was the last clip and transcription + Gemini completed,
+        # shape the Gemini response for the frontend.
+        if send_full_clips_result is not None:
+            gemini_payload = send_gemini_result_to_frontend(send_full_clips_result)
+            if gemini_payload is not None:
+                # We already include recording_id in response_payload,
+                # so we only inject the gemini_result object.
+                response_payload["gemini_result"] = gemini_payload.get("gemini_result")
 
         print("=" * 70 + "\n")
         return jsonify(response_payload), 200
