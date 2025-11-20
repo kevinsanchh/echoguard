@@ -66,3 +66,13 @@
     @apply bg-background text-foreground;
   }
 }
+
+
+/* HTML: <div class="loader"></div> */
+.loader {
+  animation: l1 2s linear infinite alternate;
+}
+.loader:before {
+  content:"Processing..."
+}
+@keyframes l1 {to{opacity: 0}}

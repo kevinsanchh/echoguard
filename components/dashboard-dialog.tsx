@@ -202,11 +202,19 @@ const DashboardDialog = ({
                                     <h1 className="text-green-900 mb-2">
                                       Benefit Score & Analysis
                                     </h1>
-                                    <p className="text-neutral-900">{record.benefit_reasoning}</p>
+                                    <div className="text-neutral-900">
+                                      {record.benefit_reasoning == null ? (
+                                        <div className="loader text-sm"></div>
+                                      ) : (
+                                        record.benefit_reasoning
+                                      )}
+                                    </div>
                                   </div>
                                   <div className="bg-green-100 border border-green-600 aspect-square items-center justify-center flex size-10">
                                     <h1 className="text-green-600 text-sm font-semibold">
-                                      {record.benefit_score}%
+                                      {record.benefit_score == null
+                                        ? "N/A"
+                                        : String(record.benefit_score).split(".")[0] + "%"}
                                     </h1>
                                   </div>
                                 </div>
@@ -214,11 +222,19 @@ const DashboardDialog = ({
                                 <div className="flex flex-row mt-4">
                                   <div className="w-full">
                                     <h1 className="text-red-900 mb-2">Risk Score & Analysis</h1>
-                                    <p className="text-neutral-900">{record.risk_reasoning}</p>
+                                    <div className="text-neutral-900">
+                                      {record.risk_reasoning == null ? (
+                                        <div className="loader text-sm"></div>
+                                      ) : (
+                                        record.risk_reasoning
+                                      )}
+                                    </div>
                                   </div>
                                   <div className="bg-red-100 border border-red-600 aspect-square items-center justify-center flex size-10">
                                     <h1 className="text-red-600 text-sm font-semibold">
-                                      {String(record.risk_score).split(".")[0]}%
+                                      {record.risk_score == null
+                                        ? "N/A"
+                                        : String(record.risk_score).split(".")[0] + "%"}
                                     </h1>
                                   </div>
                                 </div>
