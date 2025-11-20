@@ -3,7 +3,14 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence, Variants, Transition } from "framer-motion";
 import { Button } from "./ui/button";
 import { AudioLines, CircleX, Settings } from "lucide-react";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import RecordingExpandedDialog from "./recording-expanded-dialog";
+import { format } from "date-fns";
 
 const DashboardDialog = ({
   toggleModal: externalToggleModal,
@@ -124,72 +131,107 @@ const DashboardDialog = ({
                 {/* Modal body */}
                 <div className="p-4 md:p-5 space-y-4 overflow-y-scroll">
                   <h3 className="font-semibold text-lg mb-2">Saved Recordings</h3>
-                  <div className="border rounded-md p-3 bg-background/80 backdrop-blur-sm cursor-pointer active:scale-[0.97] ease-in-out duration-100">
-                    <h1 className="font-semibold mb-2   border-b pb-1  ">
-                      Recording Nov. 19, 2025 1:38 pm
-                    </h1>
 
-                    <div className="flex flex-row gap-2 my-4">
-                      <div className="px-1 rounded-sm font-medium text-xs bg-green-100 border-green-600 text-green-600 border">
-                        Benefit Score: 62%
-                      </div>
-                      <div className="px-1 rounded-sm font-medium text-xs bg-red-100 border-red-600 text-red-600 border">
-                        Risk Score : 13%
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="border bg-neutral-50 border-neutral-200 rounded-md p-2">
-                        <h1 className="text-md text-neutral-600">Gunfire</h1>
-                        <h1 className="font-semibold text-right text-xl">38%</h1>
-                      </div>
-                      <div className="border bg-neutral-50 border-neutral-200 rounded-md p-2">
-                        <h1 className="text-md text-neutral-600">Whimper</h1>
-                        <h1 className="font-semibold text-right text-xl">79%</h1>
-                      </div>
-                      <div className="border bg-neutral-50 border-neutral-200 rounded-md p-2">
-                        <h1 className="text-md text-neutral-600">Explosion</h1>
-                        <h1 className="font-semibold text-right text-xl">24%</h1>
-                      </div>
-                    </div>
+                  {/* Designing new list item WIP */}
 
-                    <ul className="hidden flex flex-row">
-                      <li className="">risk score</li>
-                      <li className="">benefit score</li>
-                      <li className="">risk reasoning</li>
-                      <li className="">benefit reasoning</li>
-                    </ul>
-                  </div>
-                  <ul className="space-y-2 max-h-[70vh] overflow-y-auto">
+                  <Accordion
+                    type="single"
+                    collapsible
+                    className="flex flex-col gap-2  overflow-y-scroll max-h-[36.8rem]"
+                  >
                     {(() => {
                       if (typeof window === "undefined") return null;
                       const data = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
                       if (data.length === 0)
-                        return <li className="text-muted-foreground">No recordings yet</li>;
+                        return (
+                          <AccordionItem value="empty">
+                            <AccordionTrigger>No recordings yet</AccordionTrigger>
+                          </AccordionItem>
+                        );
                       return data
                         .slice()
                         .reverse()
-                        .map((record: any) => (
-                          <li
+                        .map((record: any, idx: number) => (
+                          <AccordionItem
                             key={record.id}
-                            className="border border-border rounded-md p-3 bg-background/80 backdrop-blur-sm"
+                            value={`item-${idx}`}
+                            className="border rounded-md cursor-pointer active:scale-[0.97] duration-100 bg-white"
                           >
-                            <div className="font-medium text-xs text-muted-foreground mb-1">
-                              {record.date}
-                            </div>
-                            <ul className="ml-2 list-disc">
-                              {record.detections.map((det: any, i: number) => (
-                                <li key={i} className="ml-4">
-                                  <span className="font-semibold">{det.label}</span>{" "}
-                                  <span className="text-muted-foreground text-xs">
-                                    ({det.confidence}%)
-                                  </span>
-                                </li>
-                              ))}
-                            </ul>
-                          </li>
+                            <AccordionTrigger>
+                              <div className="w-full rounded-md p-3 bg-background/80 backdrop-blur-sm ">
+                                <h1 className="font-semibold mb-3 border-b pb-2">
+                                  Recording {format(new Date(record.date), "MMM. dd, yyyy h:mm a")}
+                                </h1>
+                                <div className="hidden flex-row gap-2 my-4">
+                                  <div className="px-1 rounded-sm font-medium text-xs bg-green-100 border-green-600 text-green-600 border">
+                                    Benefit Score: 62%
+                                  </div>
+                                  <div className="px-1 rounded-sm font-medium text-xs bg-red-100 border-red-600 text-red-600 border">
+                                    Risk Score : 13%
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2">
+                                  {record.detections.map((det: any, i: number) => (
+                                    <div
+                                      key={i}
+                                      className="border bg-neutral-50 border-neutral-200 rounded-md p-2"
+                                    >
+                                      <h1 className="text-md text-neutral-600">{det.label}</h1>
+                                      <h1 className="font-semibold text-right text-xl">
+                                        {String(det.confidence).split(".")[0]}%
+                                      </h1>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </AccordionTrigger>
+                            <AccordionContent asChild className="flex flex-col gap-4 mx-3">
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.15 }}
+                              >
+                                {/* <p>{record.benefitReasoning}heere is some contetn</p>
+                                <p>{record.riskReasoning} here is some content</p> */}
+                                <hr className="mt-2" />
+                                <div className="flex flex-row mt-4">
+                                  <div className="w-full">
+                                    <h1 className="text-neutral-600 mb-2">
+                                      Benefit Score & Analysis
+                                    </h1>
+                                    <p className="text-neutral-900">{record.benefitReasoning}</p>
+                                    <p className="text-neutral-900">
+                                      Officia ullamco in consectetur exercitation esse exercitation
+                                      laborum eu et adipisicing cillum do eiusmod voluptate ex. Ex
+                                      deserunt sunt amet enim. Occaecat quis adipisicing do quis ex
+                                    </p>
+                                  </div>
+                                  <div className="bg-green-100 border border-green-600 aspect-square items-center justify-center flex size-10">
+                                    <h1 className="text-green-600 text-sm font-semibold">34%</h1>
+                                  </div>
+                                </div>
+                                <hr className="mt-4" />
+                                <div className="flex flex-row mt-4">
+                                  <div className="w-full">
+                                    <h1 className="text-neutral-600 mb-2">Risk Score & Analysis</h1>
+                                    <p className="text-neutral-900">{record.riskReasoning}</p>
+                                    <p className="text-neutral-900">
+                                      Officia ullamco in consectetur exercitation esse exercitation
+                                      laborum eu et adipisicing cillum do eiusmod voluptate ex. Ex
+                                      deserunt sunt amet enim. Occaecat quis adipisicing do quis ex
+                                    </p>
+                                  </div>
+                                  <div className="bg-red-100 border border-red-600 aspect-square items-center justify-center flex size-10">
+                                    <h1 className="text-red-600 text-sm font-semibold">34%</h1>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            </AccordionContent>
+                          </AccordionItem>
                         ));
                     })()}
-                  </ul>
+                  </Accordion>
                 </div>
                 {typeof window !== "undefined" &&
                   (() => {
