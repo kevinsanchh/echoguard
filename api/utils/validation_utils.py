@@ -1,9 +1,19 @@
-# utils/validation_utils.py
-
 """
 validation_utils.py
 
-Contains audio validation logic for stitched NON-SPEECH segments.
+FINAL UPDATED VALIDATOR (20 Nov 2025)
+
+Derived from real microphone behavior recorded in test runs.
+
+GOALS:
+- Reject muted mic, quiet room noise, and speech fragments VAD mislabels.
+- Accept real environmental non-speech events (gunshots, explosions, growling).
+- Prevent CNN hallucinations by ensuring only strong non-speech signals survive.
+- Keep compatibility with existing VAD → validate → model pipeline.
+
+FUTURE TODO:
+- Ideally compute stats BEFORE normalization (denormalized waveform).
+  For now, thresholds below are tuned to normalized values.
 """
 
 import torch
@@ -11,12 +21,16 @@ import torch
 
 def validate_nonspeech_waveform(waveform: torch.Tensor, sample_rate: int):
     """
-    Validate stitched NON-SPEECH waveform to ensure it contains
-    meaningful audio rather than silence or empty data.
+    Validate stitched NON-SPEECH waveform.
 
+    Args:
+        waveform: Tensor (channels, samples)
+        sample_rate: int Hz
     """
 
-    # Ensure correct shape
+    # ------------------------------------------------------------
+    # Shape + basic stats
+    # ------------------------------------------------------------
     if not isinstance(waveform, torch.Tensor):
         waveform = torch.tensor(waveform)
 
@@ -25,7 +39,6 @@ def validate_nonspeech_waveform(waveform: torch.Tensor, sample_rate: int):
 
     num_channels, num_samples = waveform.shape
 
-    # Default stats
     if sample_rate <= 0:
         duration_sec = 0.0
     else:
@@ -35,9 +48,13 @@ def validate_nonspeech_waveform(waveform: torch.Tensor, sample_rate: int):
         with torch.no_grad():
             max_abs = waveform.abs().max().item()
             rms = torch.sqrt(torch.mean(waveform ** 2)).item()
+
+            # Fraction of samples above 0.05 (tuned for normalized values)
+            fraction_loud = torch.mean((waveform.abs() > 0.05).float()).item()
     else:
         max_abs = 0.0
         rms = 0.0
+        fraction_loud = 0.0
 
     stats = {
         "num_channels": num_channels,
@@ -45,30 +62,43 @@ def validate_nonspeech_waveform(waveform: torch.Tensor, sample_rate: int):
         "duration_sec": duration_sec,
         "max_abs": max_abs,
         "rms": rms,
+        "fraction_loud": fraction_loud,
     }
 
-    # Validation thresholds (LENIENT)
+    # ------------------------------------------------------------
+    # VALIDATION LOGIC
+    # Derived from actual test data from your microphone.
+    # ------------------------------------------------------------
     failure_reasons = []
     is_valid = True
 
-    # Empty waveform
+    # 1. Empty waveform
     if num_samples == 0:
         is_valid = False
         failure_reasons.append("empty_waveform")
 
-    # Duration too short (< 0.25 sec)
+    # 2. Duration must be ≥ 0.25 sec
     if duration_sec < 0.25:
         is_valid = False
         failure_reasons.append("too_short")
 
-    # RMS energy too low (< 0.0015)
-    if rms < 0.0015:
+    # 3. RMS ≥ 0.02
+    # Rejects muted mic and quiet noise
+    if rms < 0.02:
         is_valid = False
         failure_reasons.append("low_rms")
 
-    # Peak amplitude too low (< 0.01)
-    if max_abs < 0.01:
+    # 4. Peak amplitude ≥ 0.05
+    # Prevents quiet static or speech remnants boosted by normalization
+    if max_abs < 0.05:
         is_valid = False
         failure_reasons.append("low_peak_amplitude")
+
+    # 5. Fraction loud ≥ 0.06
+    # Key separation: real non-speech events (gunshots/explosions) exceed this,
+    # while speech fragments typically fall below it.
+    if fraction_loud < 0.06:
+        is_valid = False
+        failure_reasons.append("low_fraction_loud")
 
     return is_valid, failure_reasons, stats

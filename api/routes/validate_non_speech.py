@@ -93,7 +93,8 @@ def validate_non_speech():
             f"[Validate] Waveform stats | recording_id={recording_id}, clip_index={clip_index} | "
             f"channels={stats['num_channels']}, samples={stats['num_samples']}, "
             f"duration={stats['duration_sec']:.3f}s, "
-            f"max_abs={stats['max_abs']:.6f}, rms={stats['rms']:.6f}"
+            f"max_abs={stats['max_abs']:.6f}, rms={stats['rms']:.6f}, "
+            f"fraction_loud={stats['fraction_loud']:.6f}"
         )
 
         # 5. Log validation result
