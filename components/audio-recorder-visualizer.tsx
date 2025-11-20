@@ -63,6 +63,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   const [mlFlags, setMlFlags] = useState<{ label: string; confidence: number; time: string }[]>([]);
   // --- ML Flags scroll handling ---
   const mlFlagsContainerRef = useRef<HTMLDivElement | null>(null);
+  const [geminiResult, setGeminiResult] = useState<any>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
 
   const scrollToBottom = useCallback(() => {
@@ -576,6 +577,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
       setRecordingPhase("idle");
       setIsRecording(false);
     }
+    console.log("Recording ID created:", recordingIdRef.current);
   }
 
   async function stopListening() {
@@ -693,6 +695,12 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
       reviewAudioBufferRef.current = null;
     }
 
+    console.log("Recording ID at stopListening():", recordingIdRef.current);
+    setTimeout(() => {
+      console.log("Checking for Gemini result after stopListening()...");
+       fetchGeminiResult();
+       }, 8000);
+
     mediaRecorderRef.current = {
       stream: null,
       analyser: null,
@@ -700,6 +708,34 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
       mediaRecorder: null, // Clear the recorder instance
     };
   }
+
+  const fetchGeminiResult = async () => {
+  if (!recordingIdRef.current) return;
+
+  const url = `http://localhost:8080/process/gemini_result?recording_id=${recordingIdRef.current}`;
+  console.log("Polling Gemini result:", url);
+
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+
+    console.log("Gemini polling response:", data);
+
+    if (data.status === "ready" && data.gemini_result) {
+      setGeminiResult(data.gemini_result);
+      console.log("Gemini result stored:", data.gemini_result);
+      return; // stop polling
+    }
+
+    // Not ready yet → poll again
+    setTimeout(fetchGeminiResult, 8000);
+
+  } catch (err) {
+    console.error("Gemini polling error:", err);
+    setTimeout(fetchGeminiResult, 8000); // retry after error
+  }
+};
+
 
   function discardRecording() {
     console.log("Discarding recording.");

@@ -42,7 +42,6 @@ IMPORTANT ARCHITECTURAL NOTE:
 from flask import Blueprint, request, jsonify
 from utils.session_manager import get_session
 from utils.config import GEMINI_API_KEY
-from utils.pipeline_router import send_gemini_result_to_frontend
 
 import json
 import google.generativeai as genai

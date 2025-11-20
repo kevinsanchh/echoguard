@@ -7,8 +7,7 @@ from utils.vad_utils import (
     stitch_segments,
 )
 from utils.pipeline_router import (
-    send_cnn_model_result_to_frontend, 
-    send_gemini_result_to_frontend,
+    send_cnn_model_result_to_frontend,
 )
 import tempfile
 from pathlib import Path
