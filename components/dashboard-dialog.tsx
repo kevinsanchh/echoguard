@@ -2,7 +2,8 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence, Variants, Transition } from "framer-motion";
 import { Button } from "./ui/button";
-import { CircleX, Settings } from "lucide-react";
+import { AudioLines, CircleX, Settings } from "lucide-react";
+import RecordingExpandedDialog from "./recording-expanded-dialog";
 
 const DashboardDialog = ({
   toggleModal: externalToggleModal,
@@ -75,7 +76,7 @@ const DashboardDialog = ({
       {/* Modal toggle */}
       {!externalToggleModal && (
         <Button onClick={toggleModal} size="icon" variant="outline" className=" border-neutral-200">
-          <Settings size={15} />
+          <AudioLines size={15} />
         </Button>
       )}
 
@@ -103,7 +104,7 @@ const DashboardDialog = ({
               initial="initial"
               animate="animate"
               exit="initial"
-              className="relative p-4 w-full h-full max-h-[90%] max-w-7xl aspect-3/4"
+              className="relative p-4 w-full h-full max-h-[90%] max-w-lg aspect-3/4"
             >
               {/* Modal content */}
               <div className="h-full w-full relative bg-white rounded-lg shadow-sm dark:bg-gray-700">
@@ -121,8 +122,43 @@ const DashboardDialog = ({
                 </div>
 
                 {/* Modal body */}
-                <div className="p-4 md:p-5 space-y-4 ">
+                <div className="p-4 md:p-5 space-y-4 overflow-y-scroll">
                   <h3 className="font-semibold text-lg mb-2">Saved Recordings</h3>
+                  <div className="border rounded-md p-3 bg-background/80 backdrop-blur-sm cursor-pointer active:scale-[0.97] ease-in-out duration-100">
+                    <h1 className="font-semibold mb-2   border-b pb-1  ">
+                      Recording Nov. 19, 2025 1:38 pm
+                    </h1>
+
+                    <div className="flex flex-row gap-2 my-4">
+                      <div className="px-1 rounded-sm font-medium text-xs bg-green-100 border-green-600 text-green-600 border">
+                        Benefit Score: 62%
+                      </div>
+                      <div className="px-1 rounded-sm font-medium text-xs bg-red-100 border-red-600 text-red-600 border">
+                        Risk Score : 13%
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="border bg-neutral-50 border-neutral-200 rounded-md p-2">
+                        <h1 className="text-md text-neutral-600">Gunfire</h1>
+                        <h1 className="font-semibold text-right text-xl">38%</h1>
+                      </div>
+                      <div className="border bg-neutral-50 border-neutral-200 rounded-md p-2">
+                        <h1 className="text-md text-neutral-600">Whimper</h1>
+                        <h1 className="font-semibold text-right text-xl">79%</h1>
+                      </div>
+                      <div className="border bg-neutral-50 border-neutral-200 rounded-md p-2">
+                        <h1 className="text-md text-neutral-600">Explosion</h1>
+                        <h1 className="font-semibold text-right text-xl">24%</h1>
+                      </div>
+                    </div>
+
+                    <ul className="hidden flex flex-row">
+                      <li className="">risk score</li>
+                      <li className="">benefit score</li>
+                      <li className="">risk reasoning</li>
+                      <li className="">benefit reasoning</li>
+                    </ul>
+                  </div>
                   <ul className="space-y-2 max-h-[70vh] overflow-y-auto">
                     {(() => {
                       if (typeof window === "undefined") return null;

@@ -1235,7 +1235,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
           <Popover open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
             <PopoverTrigger asChild>
               <Button size="icon" variant="outline" className=" border-neutral-200">
-                <AudioLines size={15} />
+                <Settings2 size={15} />
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-48 p-4" align="end">
@@ -1267,7 +1267,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
           </div>
         </div>
 
-        <div className="absolute top-4 left-4 z-50  flex gap-2">
+        <div className="absolute top-4 left-4 z-20  flex gap-2">
           <Link
             href="/"
             className="cursor-pointer active:bg-neutral-100 active:scale-95 ease-in-out duration-100 border-neutral-200 p-1  rounded-md border px-2 flex justify-center items-center text-neutral-700 gap-2"
