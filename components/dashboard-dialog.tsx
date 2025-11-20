@@ -111,7 +111,7 @@ const DashboardDialog = ({
               initial="initial"
               animate="animate"
               exit="initial"
-              className="relative p-4 w-full h-full max-h-[90%] max-w-lg aspect-3/4"
+              className="relative p-4 w-full h-full max-h-[90%] max-w-2xl aspect-3/4"
             >
               {/* Modal content */}
               <div className="h-full w-full relative bg-white rounded-lg shadow-sm dark:bg-gray-700">
@@ -137,7 +137,7 @@ const DashboardDialog = ({
                   <Accordion
                     type="single"
                     collapsible
-                    className="flex flex-col gap-2  overflow-y-scroll max-h-[36.8rem]"
+                    className="flex flex-col gap-4  overflow-y-scroll max-h-[36.8rem]"
                   >
                     {(() => {
                       if (typeof window === "undefined") return null;
