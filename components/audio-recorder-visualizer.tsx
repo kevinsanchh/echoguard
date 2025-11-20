@@ -25,6 +25,7 @@ import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile } from "@ffmpeg/util";
 import DashboardDialog from "./dashboard-dialog";
 import Link from "next/link";
+import { TypingAnimation } from "./ui/typing-animation";
 // --- End ffmpeg.wasm imports ---
 
 type Props = {
@@ -61,9 +62,12 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   const [ffmpegLoadingMessage, setFfmpegLoadingMessage] = useState<string>("");
   // NEW: Store ML model flags (sound detections)
   const [mlFlags, setMlFlags] = useState<{ label: string; confidence: number; time: string }[]>([]);
+
   // --- ML Flags scroll handling ---
   const mlFlagsContainerRef = useRef<HTMLDivElement | null>(null);
   const [geminiResult, setGeminiResult] = useState<any>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
   const [isAtBottom, setIsAtBottom] = useState(true);
 
   const scrollToBottom = useCallback(() => {
@@ -585,6 +589,8 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
 
     // --- Stop Backend Recording Cycle ---
     console.log("stopListening triggered → marking last clip");
+    setIsAnalyzing(true);
+
     lastClipRef.current = true;
 
     await new Promise((res) => setTimeout(res, 350));
@@ -727,6 +733,8 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
 
       if (data.status === "ready" && data.gemini_result) {
         setGeminiResult(data.gemini_result);
+        setIsAnalyzing(false);
+
         // Insert directly after setGeminiResult(data.gemini_result);
         const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
         console.log("DEBUG: recordingIdRef.current =", recordingIdRef.current);
@@ -1139,6 +1147,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     totalAudioDuration,
     finalAudioBlob,
     theme,
+    isAnalyzing,
   ]);
 
   return (
@@ -1190,16 +1199,41 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
             </div>
           </>
         )}
-        {recordingPhase === "review" && (
+        {/* {recordingPhase === "review" && (
           <PlaybackDisplay
             currentTime={currentPlaybackTime}
             totalDuration={totalAudioDuration}
             timerClassName={timerClassName}
           />
-        )}
-        {(recordingPhase === "recording" || recordingPhase === "review") && (
+        )} */}
+
+        {recordingPhase === "review" &&
+          (isAnalyzing ? (
+            <div className="h-full w-full flex items-center justify-center text-sm text-muted-foreground">
+              <TypingAnimation blinkCursor={true} deleteSpeed={140} loop>
+                Analyzing audio...
+              </TypingAnimation>
+            </div>
+          ) : (
+            <div className="">
+              <PlaybackDisplay
+                currentTime={currentPlaybackTime}
+                totalDuration={totalAudioDuration}
+                timerClassName={timerClassName}
+              />
+            </div>
+          ))}
+
+        {recordingPhase === "recording" && (
           <canvas ref={canvasRef} className={`h-full w-full bg-background flex`} />
         )}
+
+        {recordingPhase === "review" &&
+          (isAnalyzing ? (
+            ""
+          ) : (
+            <canvas ref={canvasRef} className={`h-full w-full bg-background flex`} />
+          ))}
 
         <div className="flex gap-2">
           {(recordingPhase === "idle" || recordingPhase === "loading_ffmpeg") && (
@@ -1263,30 +1297,34 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
               </TooltipContent>
             </Tooltip>
           )}
-          {recordingPhase === "review" && (
-            <>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button onClick={togglePlayback} size={"icon"}>
-                    {isPlayingBack ? <Pause size={15} /> : <Play size={15} />}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent className="m-2">
-                  <span> {isPlayingBack ? "Pause Playback" : "Start Playback"} </span>
-                </TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button onClick={discardRecording} size={"icon"} variant={"destructive"}>
-                    <Trash size={15} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent className="m-2">
-                  <span> Discard Recording</span>
-                </TooltipContent>
-              </Tooltip>
-            </>
-          )}
+
+          {recordingPhase === "review" &&
+            (isAnalyzing ? (
+              ""
+            ) : (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button onClick={togglePlayback} size={"icon"}>
+                      {isPlayingBack ? <Pause size={15} /> : <Play size={15} />}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="m-2">
+                    <span> {isPlayingBack ? "Pause Playback" : "Start Playback"} </span>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button onClick={discardRecording} size={"icon"} variant={"destructive"}>
+                      <Trash size={15} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent className="m-2">
+                    <span> Discard Recording</span>
+                  </TooltipContent>
+                </Tooltip>
+              </>
+            ))}
         </div>
         <input
           ref={fileInputRef}
