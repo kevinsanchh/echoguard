@@ -28,9 +28,7 @@ def load_vad_model():
     return rnnoise_model, vad_helpers
 
 
-# ------------------------------------------------------------
 # Run VAD on a waveform (PyTorch tensor) using RNNoise
-# ------------------------------------------------------------
 
 def run_vad_on_waveform(
         waveform,
@@ -43,17 +41,6 @@ def run_vad_on_waveform(
     ):
     """
     Applies RNNoise-based VAD to a loaded waveform.
-
-    Parameters:
-        waveform (torch.Tensor): Tensor shape [1, num_samples]
-        model: RNNoise instance (from pyrnnoise)
-        vad_helpers (dict):
-            - "target_sample_rate": int (48_000)
-            - "frame_size": int (480)
-        sample_rate: original audio sample rate used elsewhere in the pipeline
-        threshold: speech probability threshold for frame to be considered speech
-        min_speech_duration_ms: minimum duration for a speech segment
-        min_silence_duration_ms: maximum gap between speech segments to be merged
 
     Returns:
         speech_timestamps (list[dict]): List of dicts with speech regions:

@@ -131,7 +131,7 @@ def process_vad():
             model=vad_model,
             vad_helpers=vad_helpers,
             sample_rate=sample_rate,
-            threshold=0.25,
+            threshold=0.20,
             min_speech_duration_ms=100,
             min_silence_duration_ms=250,
         )

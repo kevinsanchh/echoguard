@@ -14,26 +14,6 @@ def validate_nonspeech_waveform(waveform: torch.Tensor, sample_rate: int):
     Validate stitched NON-SPEECH waveform to ensure it contains
     meaningful audio rather than silence or empty data.
 
-    Parameters
-    ----------
-    waveform : torch.Tensor
-        Shape: (channels, samples)
-    sample_rate : int
-        Sampling rate of the audio (e.g., 16000)
-
-    Returns
-    -------
-    is_valid : bool
-        True if waveform contains meaningful non-speech audio.
-    failure_reasons : list[str]
-        Reasons why waveform was rejected (if invalid).
-    stats : dict
-        Dictionary of computed waveform statistics:
-            - num_channels
-            - num_samples
-            - duration_sec
-            - max_abs
-            - rms
     """
 
     # Ensure correct shape

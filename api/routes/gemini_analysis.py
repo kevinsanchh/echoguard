@@ -5,38 +5,6 @@ Gemini_analysis.py
 
 This module defines the Gemini wrapper endpoint.
 
-CURRENT ROLE:
-- Acts as a coordination layer that:
-    * Checks if transcription + model results are ready.
-    * When both are present, runs the Gemini 2.5-Flash model
-      with a rubric-based prompt to compute risk/benefit scores.
-    * Returns a structured JSON analysis to the frontend.
-    * Clears session data after a successful analysis.
-
-DATA FLOW:
-- Model results (environmental sound classifications) are stored
-  in SessionManager under "nonspeech_results".
-- Transcription results (text + segments) are stored in
-  SessionManager under "transcription".
-
-IMPORTANT ARCHITECTURAL NOTE:
-- Model results and transcription will NOT arrive at the same time.
-  Typically:
-    - Model results arrive first (per 5-second clip, almost real-time).
-    - Transcription arrives later (after all clips are processed and
-      Faster-Whisper finishes).
-
-- The Gemini endpoint must therefore:
-    1. Accept a recording_id.
-    2. Look up the session in SessionManager.
-    3. Check whether BOTH of the following are available:
-        - Non-empty transcription text.
-        - At least one nonspeech_result.
-    4. If either is missing, return a status:
-        - "waiting_for_transcription_and_model_results"
-        - "waiting_for_transcription"
-        - "waiting_for_model_results"
-       If both are present, run Gemini and return status="completed".
 """
 
 from flask import Blueprint, request, jsonify
@@ -53,10 +21,6 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 
 def _build_gemini_prompt(transcription_text: str, cnn_results_obj) -> str:
-    """
-    Build the full Gemini prompt using a safe structured format.
-    100% of the user's original prompt is preserved.
-    """
     
     # Safe JSON encoding for CNN results (no indentation, no escaping issues)
     safe_cnn_json = json.dumps(cnn_results_obj, ensure_ascii=False)
@@ -186,9 +150,7 @@ def _run_gemini_analysis(transcription_text, cnn_results_obj):
     model = genai.GenerativeModel("gemini-2.5-flash")
     response = model.generate_content(prompt)
 
-    # ------------------------------------------------------------
     # Extract raw text safely
-    # ------------------------------------------------------------
     raw_text = None
 
     try:
@@ -208,9 +170,7 @@ def _run_gemini_analysis(transcription_text, cnn_results_obj):
 
     print("\n[Gemini] RAW OUTPUT:\n", raw_text)
 
-    # ------------------------------------------------------------
     # Clean markdown fences
-    # ------------------------------------------------------------
     cleaned = raw_text.strip()
 
     # strip opening ```
@@ -225,9 +185,7 @@ def _run_gemini_analysis(transcription_text, cnn_results_obj):
 
     print("\n[Gemini] CLEANED RAW OUTPUT:\n", cleaned)
 
-    # ------------------------------------------------------------
     # Parse JSON
-    # ------------------------------------------------------------
     try:
         analysis = json.loads(cleaned)
     except Exception as e:
@@ -245,8 +203,7 @@ def gemini_check_or_analyze():
     This endpoint:
     • checks readiness (transcription + model results)
     • runs Gemini analysis when ready
-    • now STORES result in session["final_gemini_result"]
-      instead of clearing the session immediately
+    • STORES result in session["final_gemini_result"]
     """
 
     req_data = request.form or request.json or {}
@@ -264,9 +221,7 @@ def gemini_check_or_analyze():
     has_transcription = bool(transcription_text and transcription_text.strip())
     has_model_results = bool(nonspeech_results)
 
-    # ------------------------------------------------------------
     # If not ready, return waiting status
-    # ------------------------------------------------------------
     if not has_transcription and not has_model_results:
         return jsonify({
             "recording_id": recording_id,
@@ -285,9 +240,7 @@ def gemini_check_or_analyze():
             "status": "waiting_for_model_results"
         })
 
-    # ------------------------------------------------------------
     # READY → Run Gemini
-    # ------------------------------------------------------------
     try:
         analysis = _run_gemini_analysis(
             transcription_text=transcription_text,
@@ -297,14 +250,10 @@ def gemini_check_or_analyze():
         print(f"[Gemini] Analysis complete for recording_id={recording_id} "
               f"| risk={analysis.get('risk_score')} | benefit={analysis.get('benefit_score')}")
 
-        # ------------------------------------------------------------
         # NEW: Store final Gemini result in session
-        # ------------------------------------------------------------
         session["final_gemini_result"] = analysis
         print(f"[Gemini] Stored final Gemini result for recording_id={recording_id}")
 
-        # DO NOT CLEAR SESSION HERE ANYMORE
-        # We need data available for /process/gemini_result
 
         return jsonify({
             "recording_id": recording_id,

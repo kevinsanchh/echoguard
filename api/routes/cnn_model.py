@@ -102,7 +102,7 @@ def classify_nonspeech_clip():
         mel_batch = preprocess_waveform(waveform, orig_sr).to(device)
 
         # 6. NEW inference (multi-label sigmoid)
-        THRESHOLD = 0.70
+        THRESHOLD = 0.80
         result = predict(model, classes, mel_batch, threshold=THRESHOLD)
 
         top_class = result["top_class"]
