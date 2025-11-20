@@ -142,6 +142,8 @@ const DashboardDialog = ({
                     {(() => {
                       if (typeof window === "undefined") return null;
                       const data = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
+                      // console.log("ECHOGUARD LOCALSTORAGE:", data);
+
                       if (data.length === 0)
                         return (
                           <AccordionItem value="empty">
@@ -197,33 +199,27 @@ const DashboardDialog = ({
                                 <hr className="mt-2" />
                                 <div className="flex flex-row mt-4">
                                   <div className="w-full">
-                                    <h1 className="text-neutral-600 mb-2">
+                                    <h1 className="text-green-900 mb-2">
                                       Benefit Score & Analysis
                                     </h1>
-                                    <p className="text-neutral-900">{record.benefitReasoning}</p>
-                                    <p className="text-neutral-900">
-                                      Officia ullamco in consectetur exercitation esse exercitation
-                                      laborum eu et adipisicing cillum do eiusmod voluptate ex. Ex
-                                      deserunt sunt amet enim. Occaecat quis adipisicing do quis ex
-                                    </p>
+                                    <p className="text-neutral-900">{record.benefit_reasoning}</p>
                                   </div>
                                   <div className="bg-green-100 border border-green-600 aspect-square items-center justify-center flex size-10">
-                                    <h1 className="text-green-600 text-sm font-semibold">34%</h1>
+                                    <h1 className="text-green-600 text-sm font-semibold">
+                                      {record.benefit_score}%
+                                    </h1>
                                   </div>
                                 </div>
                                 <hr className="mt-4" />
                                 <div className="flex flex-row mt-4">
                                   <div className="w-full">
-                                    <h1 className="text-neutral-600 mb-2">Risk Score & Analysis</h1>
-                                    <p className="text-neutral-900">{record.riskReasoning}</p>
-                                    <p className="text-neutral-900">
-                                      Officia ullamco in consectetur exercitation esse exercitation
-                                      laborum eu et adipisicing cillum do eiusmod voluptate ex. Ex
-                                      deserunt sunt amet enim. Occaecat quis adipisicing do quis ex
-                                    </p>
+                                    <h1 className="text-red-900 mb-2">Risk Score & Analysis</h1>
+                                    <p className="text-neutral-900">{record.risk_reasoning}</p>
                                   </div>
                                   <div className="bg-red-100 border border-red-600 aspect-square items-center justify-center flex size-10">
-                                    <h1 className="text-red-600 text-sm font-semibold">34%</h1>
+                                    <h1 className="text-red-600 text-sm font-semibold">
+                                      {String(record.risk_score).split(".")[0]}%
+                                    </h1>
                                   </div>
                                 </div>
                               </motion.div>

@@ -661,9 +661,13 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
         if (mlFlags.length > 0) {
           const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
           const newRecord = {
-            id: Date.now().toString(),
+            id: recordingIdRef.current,
             date: new Date().toLocaleString(),
             detections: mlFlags,
+            benefit_reasoning: null,
+            benefit_score: null,
+            risk_reasoning: null,
+            risk_score: null,
           };
           localStorage.setItem("echoguard_recordings", JSON.stringify([...existing, newRecord]));
           console.log("Saved recording summary locally:", newRecord);
@@ -698,8 +702,8 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     console.log("Recording ID at stopListening():", recordingIdRef.current);
     setTimeout(() => {
       console.log("Checking for Gemini result after stopListening()...");
-       fetchGeminiResult();
-       }, 8000);
+      fetchGeminiResult();
+    }, 8000);
 
     mediaRecorderRef.current = {
       stream: null,
@@ -710,32 +714,56 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   }
 
   const fetchGeminiResult = async () => {
-  if (!recordingIdRef.current) return;
+    if (!recordingIdRef.current) return;
 
-  const url = `http://localhost:8080/process/gemini_result?recording_id=${recordingIdRef.current}`;
-  console.log("Polling Gemini result:", url);
+    const url = `http://localhost:8080/process/gemini_result?recording_id=${recordingIdRef.current}`;
+    console.log("Polling Gemini result:", url);
 
-  try {
-    const response = await fetch(url);
-    const data = await response.json();
+    try {
+      const response = await fetch(url);
+      const data = await response.json();
 
-    console.log("Gemini polling response:", data);
+      console.log("Gemini polling response:", data);
 
-    if (data.status === "ready" && data.gemini_result) {
-      setGeminiResult(data.gemini_result);
-      console.log("Gemini result stored:", data.gemini_result);
-      return; // stop polling
+      if (data.status === "ready" && data.gemini_result) {
+        setGeminiResult(data.gemini_result);
+        // Insert directly after setGeminiResult(data.gemini_result);
+        const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
+        console.log("DEBUG: recordingIdRef.current =", recordingIdRef.current);
+        console.log("DEBUG: existing records before merge =", existing);
+
+        localStorage.setItem(
+          "echoguard_recordings",
+          JSON.stringify(
+            existing.map((rec: any) =>
+              (
+                rec.id === recordingIdRef.current
+                  ? (console.log("MATCH FOUND → Updating record:", rec.id), true)
+                  : (console.log("NO MATCH:", rec.id, "vs", recordingIdRef.current), false)
+              )
+                ? {
+                    ...rec,
+                    benefit_reasoning: data.gemini_result.benefit_reasoning,
+                    benefit_score: data.gemini_result.benefit_score,
+                    risk_reasoning: data.gemini_result.risk_reasoning,
+                    risk_score: data.gemini_result.risk_score,
+                  }
+                : rec
+            )
+          )
+        );
+
+        console.log("Gemini result stored:", data.gemini_result);
+        return; // stop polling
+      }
+
+      // Not ready yet → poll again
+      setTimeout(fetchGeminiResult, 8000);
+    } catch (err) {
+      console.error("Gemini polling error:", err);
+      setTimeout(fetchGeminiResult, 8000); // retry after error
     }
-
-    // Not ready yet → poll again
-    setTimeout(fetchGeminiResult, 8000);
-
-  } catch (err) {
-    console.error("Gemini polling error:", err);
-    setTimeout(fetchGeminiResult, 8000); // retry after error
-  }
-};
-
+  };
 
   function discardRecording() {
     console.log("Discarding recording.");
