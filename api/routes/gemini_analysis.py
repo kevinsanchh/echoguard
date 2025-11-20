@@ -176,221 +176,152 @@ You must output valid JSON only. Do not include any text outside a JSON object.
     return prompt.strip()
 
 
-def _run_gemini_analysis(transcription_text: str, cnn_results_obj):
+def _run_gemini_analysis(transcription_text, cnn_results_obj):
     """
-    Call Gemini 2.5-Flash, extract the output safely, remove Markdown fences,
-    and parse the JSON. Fully compatible with google-generativeai 0.8.5.
+    Calls Gemini 2.5 Flash and returns CLEANED JSON.
+    Handles markdown fences and multiple response formats.
     """
 
-    # Encode CNN results cleanly
-    safe_cnn_json = json.dumps(cnn_results_obj, ensure_ascii=False)
-
-    # Build the full prompt
-    prompt = _build_gemini_prompt(
-        transcription_text=transcription_text,
-        cnn_results_obj=safe_cnn_json
-    )
+    prompt = _build_gemini_prompt(transcription_text, cnn_results_obj)
 
     model = genai.GenerativeModel("gemini-2.5-flash")
-
-    # ---- Make request ----
     response = model.generate_content(prompt)
 
-    # ---- Extract text safely (SDK 0.8.5 behavior) ----
+    # ------------------------------------------------------------
+    # Extract raw text safely
+    # ------------------------------------------------------------
     raw_text = None
 
-    # Preferred source when available
-    if hasattr(response, "text") and response.text:
-        raw_text = response.text.strip()
-
-    # Fallback for Gemini responses that use candidates/parts
-    if not raw_text:
-        try:
+    try:
+        if hasattr(response, "text") and response.text:
+            raw_text = response.text.strip()
+        else:
             raw_text = (
                 response.candidates[0]
                 .content.parts[0]
                 .text.strip()
             )
-        except Exception:
-            raw_text = ""
+    except Exception:
+        raw_text = ""
 
-    # ---- Handle no output at all ----
     if not raw_text:
         raise ValueError("[Gemini] Empty response from Gemini model")
 
+    print("\n[Gemini] RAW OUTPUT:\n", raw_text)
+
+    # ------------------------------------------------------------
+    # Clean markdown fences
+    # ------------------------------------------------------------
     cleaned = raw_text.strip()
 
-    # Remove opening fences
+    # strip opening ```
     if cleaned.startswith("```"):
-        cleaned = cleaned[3:].strip()  # strip leading triple backticks
-
-        # Optional "json" language tag
+        cleaned = cleaned[3:].strip()
         if cleaned.lower().startswith("json"):
             cleaned = cleaned[4:].strip()
 
-    # Remove closing fences
+    # strip closing ```
     if cleaned.endswith("```"):
         cleaned = cleaned[:-3].strip()
 
-    # Debug: show cleaned output
     print("\n[Gemini] CLEANED RAW OUTPUT:\n", cleaned)
 
-    # ---- Parse cleaned JSON ----
+    # ------------------------------------------------------------
+    # Parse JSON
+    # ------------------------------------------------------------
     try:
         analysis = json.loads(cleaned)
-    except json.JSONDecodeError as e:
+    except Exception as e:
         raise ValueError(
-            f"[Gemini] Failed to parse Gemini JSON output: {e}\n\n"
-            f"RAW OUTPUT WAS:\n{raw_text}\n\n"
-            f"CLEANED OUTPUT WAS:\n{cleaned}"
+            f"[Gemini] Failed to parse Gemini JSON output: {e}\nRaw cleaned:\n{cleaned}"
         )
 
-    # ---- Validate required fields ----
-    required_keys = [
-        "risk_score",
-        "benefit_score",
-        "risk_reasoning",
-        "benefit_reasoning",
-        "steps",
-    ]
-    for key in required_keys:
-        if key not in analysis:
-            raise ValueError(f"[Gemini] Missing required key in analysis: {key}")
-
     return analysis
+
 
 
 @gemini_bp.route("/gemini", methods=["POST"])
 def gemini_check_or_analyze():
     """
-    Gemini wrapper endpoint.
-
-    BEHAVIOR:
-    - Expects: recording_id (form or JSON).
-    - Looks up the session in SessionManager.
-    - Checks whether BOTH model results and transcription exist.
-    - If either is missing, returns a waiting status exactly as before.
-    - If both are present:
-        * Builds a rubric-based prompt.
-        * Calls Gemini 2.5-Flash.
-        * Parses the JSON-only output.
-        * Returns a structured analysis and marks status="completed".
-        * Clears session data for this recording_id.
+    This endpoint:
+    • checks readiness (transcription + model results)
+    • runs Gemini analysis when ready
+    • now STORES result in session["final_gemini_result"]
+      instead of clearing the session immediately
     """
 
-    # 1. Extract recording_id from form-data or JSON
-    recording_id = request.form.get("recording_id", type=str)
+    req_data = request.form or request.json or {}
+    recording_id = req_data.get("recording_id")
 
-    if recording_id is None and request.is_json:
-        payload = request.get_json(silent=True) or {}
-        recording_id = payload.get("recording_id")
+    if not recording_id:
+        return jsonify({"error": "Missing recording_id"}), 400
 
-    if recording_id is None:
-        print("\n[Gemini] ERROR: Missing 'recording_id' in request.\n")
-        return jsonify({"error": "Missing required field 'recording_id'"}), 400
-
-    print(f"[Gemini] Received request | recording_id={recording_id}")
-
-    # 2. Fetch session from SessionManager
     session = get_session(recording_id)
 
-    if session is None:
-        print(f"[Gemini] WARNING: No session found for recording_id={recording_id}")
-        return jsonify({
-            "recording_id": recording_id,
-            "status": "no_session",
-            "message": "No session data found for this recording_id."
-        }), 404
-
-    # 3. Inspect transcription + nonspeech_results from the session
     transcription = session.get("transcription", {})
     transcription_text = transcription.get("text")
-
     nonspeech_results = session.get("nonspeech_results", [])
 
     has_transcription = bool(transcription_text and transcription_text.strip())
-    has_model_results = bool(nonspeech_results)  # At least one nonspeech result
+    has_model_results = bool(nonspeech_results)
 
-    # If either piece is missing, keep the old readiness behavior exactly
+    # ------------------------------------------------------------
+    # If not ready, return waiting status
+    # ------------------------------------------------------------
     if not has_transcription and not has_model_results:
-        status = "waiting_for_transcription_and_model_results"
-        print(
-            f"[Gemini] Status for recording_id={recording_id}: "
-            f"{status} (no transcription, no model results)"
-        )
         return jsonify({
             "recording_id": recording_id,
-            "status": status,
-            "has_transcription": has_transcription,
-            "has_model_results": has_model_results,
-            "num_model_results": len(nonspeech_results),
-        }), 200
+            "status": "waiting_for_transcription_and_model_results"
+        })
 
-    if not has_transcription and has_model_results:
-        status = "waiting_for_transcription"
-        print(
-            f"[Gemini] Status for recording_id={recording_id}: "
-            f"{status} (model results present, transcription missing)"
-        )
+    if not has_transcription:
         return jsonify({
             "recording_id": recording_id,
-            "status": status,
-            "has_transcription": has_transcription,
-            "has_model_results": has_model_results,
-            "num_model_results": len(nonspeech_results),
-        }), 200
+            "status": "waiting_for_transcription"
+        })
 
-    if has_transcription and not has_model_results:
-        status = "waiting_for_model_results"
-        print(
-            f"[Gemini] Status for recording_id={recording_id}: "
-            f"{status} (transcription present, no model results)"
-        )
+    if not has_model_results:
         return jsonify({
             "recording_id": recording_id,
-            "status": status,
-            "has_transcription": has_transcription,
-            "has_model_results": has_model_results,
-            "num_model_results": len(nonspeech_results),
-        }), 200
+            "status": "waiting_for_model_results"
+        })
 
-    # At this point, we have BOTH transcription + model results
-    print(
-        f"[Gemini] Status for recording_id={recording_id}: ready "
-        f"(transcription + model results available; running Gemini analysis)"
-    )
-
+    # ------------------------------------------------------------
+    # READY → Run Gemini
+    # ------------------------------------------------------------
     try:
         analysis = _run_gemini_analysis(
             transcription_text=transcription_text,
-            cnn_results_obj=nonspeech_results,
-        )
-        print(
-            f"[Gemini] Analysis complete for recording_id={recording_id} | "
-            f"risk_score={analysis.get('risk_score')}, "
-            f"benefit_score={analysis.get('benefit_score')}"
+            cnn_results_obj=nonspeech_results
         )
 
-        # Clear session data after successful analysis
-        session.clear()
-        print(f"[Gemini] Cleared session data for recording_id={recording_id}")
+        print(f"[Gemini] Analysis complete for recording_id={recording_id} "
+              f"| risk={analysis.get('risk_score')} | benefit={analysis.get('benefit_score')}")
 
-        # --- NEW LOGIC: shape Gemini result like CNN ---
-        frontend_payload = send_gemini_result_to_frontend(recording_id, analysis)
+        # ------------------------------------------------------------
+        # NEW: Store final Gemini result in session
+        # ------------------------------------------------------------
+        session["final_gemini_result"] = analysis
+        print(f"[Gemini] Stored final Gemini result for recording_id={recording_id}")
 
-        # Return clean final payload to frontend
-        return jsonify(frontend_payload), 200
+        # DO NOT CLEAR SESSION HERE ANYMORE
+        # We need data available for /process/gemini_result
+
+        return jsonify({
+            "recording_id": recording_id,
+            "status": "completed",
+            "has_transcription": True,
+            "has_model_results": True,
+            "num_model_results": len(nonspeech_results),
+            "analysis": analysis
+        })
 
     except Exception as e:
-        print(
-            f"[Gemini] ERROR: Failed to run Gemini analysis for recording_id={recording_id} | "
-            f"error={e}"
-        )
         return jsonify({
             "recording_id": recording_id,
             "status": "gemini_error",
             "has_transcription": has_transcription,
             "has_model_results": has_model_results,
             "num_model_results": len(nonspeech_results),
-            "error": str(e),
+            "error": str(e)
         }), 500
