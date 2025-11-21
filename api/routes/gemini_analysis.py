@@ -10,6 +10,7 @@ This module defines the Gemini wrapper endpoint.
 from flask import Blueprint, request, jsonify
 from utils.session_manager import get_session
 from utils.config import GEMINI_API_KEY
+from utils.config import GEMINI_STATIC_PROMPT
 
 import json
 import google.generativeai as genai
@@ -22,121 +23,23 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 def _build_gemini_prompt(transcription_text: str, cnn_results_obj) -> str:
     
-    # Safe JSON encoding for CNN results (no indentation, no escaping issues)
+    
     safe_cnn_json = json.dumps(cnn_results_obj, ensure_ascii=False)
 
-    prompt = f"""
-You are the reasoning and interpretation module for EchoGuard, an AI system built to help parents monitor the safety and content of what their children are exposed to by analyzing audio from media (such as TV shows, online videos, or games) and determining whether the environment or content presents potentially harmful, violent, or disturbing material.
+    dynamic_section = f"""
+        TRANSCRIPTION:
+        <transcription>
+        {transcription_text}
+        </transcription>
 
-EchoGuard’s backend processes audio through multiple stages before information reaches you. You never receive raw audio. Instead, you always receive two processed inputs:
+        CNN_CLASS_RESULTS:
+        <cnn_results>
+        {safe_cnn_json}
+        </cnn_results>
+        """
 
-1. A full transcription of all spoken content in the recording.
-2. A set of model-generated environmental sound classifications for small audio segments (3–5 seconds each). These detections come from EchoGuard’s convolutional neural network (CNN) classifier.
-
-The CNN model is trained on the following unique sound classes:
-
-Multi-label training exists, but is not directly used here. The following are the unique classes you must consider:
-
-- Crying
-- Explosion
-- Glass Shattering
-- Fire
-- Emergency Siren
-- Artillery Fire
-- Battle Cry
-- Car Alarm
-- Gunfire
-- Slap/Smack
-- Chainsaw
-- Thunderstorm
-- Growling
-- Roar
-- Whimper
-- Screaming
-
-In your analysis, treat the transcript as the primary and most reliable source of information. Spoken content provides the clearest picture of intent, emotion, and context. When the transcript is present and reasonably detailed, it should guide the majority of your understanding.
-
-The CNN sound detections should be treated as supporting context, not absolute truth. These predictions are helpful but not perfectly accurate. Their purpose is to help you refine, confirm, or deepen your interpretation of the transcript — not to override it. Use them to validate or adjust your understanding when appropriate.
-
-### Dynamic Inputs
-Below are the dynamic inputs you must use for your analysis:
-
-TRANSCRIPTION:
-<transcription>
-{transcription_text}
-</transcription>
-
-CNN_CLASS_RESULTS (JSON):
-<cnn_results>
-{safe_cnn_json}
-</cnn_results>
-
-### Risk and Benefit Scoring Rubric
-
-Your primary job is to generate two numerical scores (risk and benefit) that accurately represent the content of the audio, with risk being the higher-priority metric. These scores must reflect the purpose of EchoGuard: helping parents understand whether the media their children are exposed to contains violent, disturbing, unsafe, or otherwise harmful content.
-
-#### Purpose-Aligned Risk Interpretation
-Before applying any sound-based adjustments, you must first determine a baseline risk score using your own reasoning. This baseline score should come from analyzing the transcript (primary signal) and the contextual meaning of the sound detections (secondary signal). The baseline should be realistic and aligned with EchoGuard’s purpose.
-
-This means:
-- High-violence content should never result in a low risk score.
-- If the transcript or the overall scenario strongly suggests danger, weapons, abuse, threats, injury, or emotional distress, the baseline risk should be correspondingly high.
-- Conversely, neutral or positive content should have a low baseline score.
-- The transcript should always guide the majority of the interpretation.
-
-After you determine the baseline, then you will refine it using the class-based scoring rules below.
-
-#### Class-Based Risk Add-Ons (Supporting, Not Dominant)
-EchoGuard’s CNN classifier may detect specific environmental sounds. These detections should refine your baseline risk score, not replace it. Because the CNN model is not perfectly accurate, detections should be treated as helpful signals rather than absolute truths.
-
-Use the following unique sound classes, grouped into three categories:
-
-Category 1 (Most Violent — +10% base):
-- Gunfire
-- Artillery Fire
-- Explosion
-- Chainsaw
-- Slap/Smack
-
-Category 2 (Moderately Violent — +6% base):
-- Glass Shattering
-- Fire
-- Battle Cry
-- Car Alarm
-- Emergency Siren
-- Roar
-
-Category 3 (Low-Level Distress — +3% base):
-- Crying
-- Whimpering
-- Growling
-- Thunderstorm
-- Screaming (non-chainsaw)
-
-When adding class-based risk adjustments, use this formula:
-
-AdditionalRisk = BaseValue * ConfidenceScore * 0.9
-
-Add the total additional risk to the baseline risk score.
-Cap the final result at 100.
-
-#### Benefit Score
-The benefit score is secondary and does not use class-based adjustments.
-Use your reasoning to determine whether the content contains positive, educational, friendly, humorous, or otherwise beneficial themes.
-If the media contains both harmful and beneficial aspects, the scores may reflect both accordingly.
-
-#### Final Output Requirements
-After completing all analysis and adjustments, output:
-
-- risk_score (0–100)
-- benefit_score (0–100)
-- risk_reasoning paragraph (1–3 sentences)
-- benefit_reasoning paragraph (1–3 sentences)
-- steps field summarizing your overall reasoning process
-
-You must output valid JSON only. Do not include any text outside a JSON object.
-"""
-    return prompt.strip()
+    final_prompt = f"{GEMINI_STATIC_PROMPT}\n\n{dynamic_section}"
+    return final_prompt.strip()
 
 
 def _run_gemini_analysis(transcription_text, cnn_results_obj):
@@ -167,8 +70,6 @@ def _run_gemini_analysis(transcription_text, cnn_results_obj):
 
     if not raw_text:
         raise ValueError("[Gemini] Empty response from Gemini model")
-
-    print("\n[Gemini] RAW OUTPUT:\n", raw_text)
 
     # Clean markdown fences
     cleaned = raw_text.strip()

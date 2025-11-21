@@ -45,10 +45,8 @@ def get_gemini_result():
         },
     }
 
-    # ------------------------------------------------------------
     # Remove the Gemini result so it is not returned twice
     # (session keeps speech, model results, etc.)
-    # ------------------------------------------------------------
     try:
         del session["final_gemini_result"]
         print(f"[Gemini Result] Cleared final Gemini result for recording_id={recording_id}")
