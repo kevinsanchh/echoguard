@@ -5,12 +5,28 @@
       "destination": "/api/server"
     },
     {
-      "source": "/api/audio-upload",
-      "destination": "/api/server"
+      "source": "/api/process/model",
+      "destination": "/api/routes/cnn_model"
     },
     {
-      "source": "/api/stitch-and-return-audio",
-      "destination": "/api/server"
+      "source": "/api/process/gemini",
+      "destination": "/api/routes/gemini_analysis"
+    },
+    {
+      "source": "/api/process/gemini_result",
+      "destination": "/api/routes/gemini_result_endpoint"
+    },
+    {
+      "source": "/api/process/transcribe",
+      "destination": "/api/routes/transcribe"
+    },
+     {
+      "source": "/api/process/vad",
+      "destination": "/api/routes/vad_primary"
+    },
+     {
+      "source": "/api/process/validate-non-speech",
+      "destination": "/api/routes/validate_non_speech"
     }
   ],
 
