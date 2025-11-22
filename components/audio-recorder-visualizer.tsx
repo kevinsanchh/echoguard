@@ -720,58 +720,88 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   }
 
   const fetchGeminiResult = async () => {
-    if (!recordingIdRef.current) return;
+  if (!recordingIdRef.current) return;
 
-    const url = `http://localhost:8080/process/gemini_result?recording_id=${recordingIdRef.current}`;
-    console.log("Polling Gemini result:", url);
+  const url = `http://localhost:8080/process/gemini_result?recording_id=${recordingIdRef.current}`;
+  console.log("Polling Gemini result:", url);
 
-    try {
-      const response = await fetch(url);
-      const data = await response.json();
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
 
-      console.log("Gemini polling response:", data);
+    console.log("Gemini polling response:", data);
 
-      if (data.status === "ready" && data.gemini_result) {
-        setGeminiResult(data.gemini_result);
-        setIsAnalyzing(false);
+    // CASE 1 — Gemini successfully produced a normal result
+    if (data.status === "ready" && data.gemini_result) {
+      setGeminiResult(data.gemini_result);
+      setIsAnalyzing(false);
 
-        // Insert directly after setGeminiResult(data.gemini_result);
-        const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
-        console.log("DEBUG: recordingIdRef.current =", recordingIdRef.current);
-        console.log("DEBUG: existing records before merge =", existing);
+      // Store in localStorage
+      const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
 
-        localStorage.setItem(
-          "echoguard_recordings",
-          JSON.stringify(
-            existing.map((rec: any) =>
-              (
-                rec.id === recordingIdRef.current
-                  ? (console.log("MATCH FOUND → Updating record:", rec.id), true)
-                  : (console.log("NO MATCH:", rec.id, "vs", recordingIdRef.current), false)
-              )
-                ? {
-                    ...rec,
-                    benefit_reasoning: data.gemini_result.benefit_reasoning,
-                    benefit_score: data.gemini_result.benefit_score,
-                    risk_reasoning: data.gemini_result.risk_reasoning,
-                    risk_score: data.gemini_result.risk_score,
-                  }
-                : rec
-            )
+      localStorage.setItem(
+        "echoguard_recordings",
+        JSON.stringify(
+          existing.map((rec: any) =>
+            rec.id === recordingIdRef.current
+              ? {
+                  ...rec,
+                  benefit_reasoning: data.gemini_result.benefit_reasoning,
+                  benefit_score: data.gemini_result.benefit_score,
+                  risk_reasoning: data.gemini_result.risk_reasoning,
+                  risk_score: data.gemini_result.risk_score,
+                  confidence_score: data.gemini_result.confidence_score,
+                  confidence_reasoning: data.gemini_result.confidence_reasoning,
+                }
+              : rec
           )
-        );
+        )
+      );
 
-        console.log("Gemini result stored:", data.gemini_result);
-        return; // stop polling
-      }
-
-      // Not ready yet → poll again
-      setTimeout(fetchGeminiResult, 8000);
-    } catch (err) {
-      console.error("Gemini polling error:", err);
-      setTimeout(fetchGeminiResult, 8000); // retry after error
+      console.log("Gemini result stored:", data.gemini_result);
+      return; // STOP POLLING
     }
-  };
+
+    // CASE 2: Not Enough Context
+    if (data.status === "not_enough_context") {
+      console.warn("Gemini returned NOT ENOUGH CONTEXT. Stopping polling.");
+
+      setIsAnalyzing(false);
+      setGeminiResult({
+        not_enough_context: true,
+        message: data.message,
+      });
+
+      // Store minimal info in localStorage so dashboard can display message
+      const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
+
+      localStorage.setItem(
+        "echoguard_recordings",
+        JSON.stringify(
+          existing.map((rec: any) =>
+            rec.id === recordingIdRef.current
+              ? {
+                  ...rec,
+                  not_enough_context: true,
+                  message: data.message,
+                }
+              : rec
+          )
+        )
+      );
+
+      return; // STOP POLLING
+    }
+
+    // CASE 3: Still Waiting → Continue Polling
+    setTimeout(fetchGeminiResult, 8000);
+
+  } catch (err) {
+    console.error("Gemini polling error:", err);
+    setTimeout(fetchGeminiResult, 8000); // retry after error
+  }
+};
+
 
   function discardRecording() {
     console.log("Discarding recording.");
