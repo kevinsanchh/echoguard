@@ -42,7 +42,7 @@ def _build_gemini_prompt(transcription_text: str, cnn_results_obj) -> str:
             "SYSTEM NOTE: Transcription has not completed for this recording. "
             "If you see this message, treat it as an internal error state."
         )
-    elif transcription_text.strip():
+    elif str(transcription_text).strip():
         # Non-empty real transcript
         visible_transcription = transcription_text
         transcription_info = (
@@ -139,11 +139,18 @@ def gemini_check_or_analyze():
     """
     This endpoint:
     • checks readiness (transcription + model results / finished flag)
-    • runs Gemini analysis when ready
+    • handles "not enough context" (Level 1) without calling Gemini
+    • runs Gemini analysis when ready (Levels 2 and 3)
     • STORES result in session["final_gemini_result"]
 
-    - Treats "transcription ran but text is empty" as READY.
-    - Treats "no CNN results but session finished" as READY.
+    New behavior:
+    - Level 1: If transcription completed AND session finished AND there is
+      no transcript text AND no CNN results, we return "not_enough_context"
+      and DO NOT call Gemini.
+    - Level 2: Minimal context is allowed; Gemini runs, but the static prompt
+      instructs it to self-assess confidence and output confidence_score
+      and confidence_reasoning.
+    - Level 3: Normal context; Gemini runs normally.
     """
 
     req_data = request.form or request.json or {}
@@ -163,13 +170,13 @@ def gemini_check_or_analyze():
 
     # Flags:
     # - transcription_completed: transcription step finished (text no longer None)
-    # - has_transcription: there is non-empty transcript text
+    # - has_transcription_text: there is non-empty transcript text
     # - has_model_results: at least one CNN detection
     transcription_completed = transcription_text is not None
-    has_transcription = bool(transcription_text and str(transcription_text).strip())
+    has_transcription_text = bool(transcription_text and str(transcription_text).strip())
     has_model_results = bool(nonspeech_results)
 
-    # If nothing has really happened yet
+    # Nothing meaningful has happened yet
     if not transcription_completed and not has_model_results and not finished:
         return jsonify({
             "recording_id": recording_id,
@@ -193,6 +200,29 @@ def gemini_check_or_analyze():
 
     # At this point transcription has completed (even if text is empty string).
 
+    # LEVEL 1: Zero-context case.
+    # Transcription ran, session finished, but:
+    # - no transcript text (empty)
+    # - no CNN model results
+    # => Do NOT call Gemini; return "not_enough_context".
+    if finished and not has_transcription_text and not has_model_results:
+        print(
+            f"[Gemini] NOT ENOUGH CONTEXT | recording_id={recording_id} | "
+            f"empty transcript AND no model results."
+        )
+        return jsonify({
+            "recording_id": recording_id,
+            "status": "not_enough_context",
+            "message": (
+                "No meaningful speech or environmental audio was detected in this "
+                "recording. Please try recording again with more content."
+            ),
+            "transcription_completed": True,
+            "has_transcription": False,
+            "has_model_results": False,
+            "finished": finished,
+        })
+
     # If we have no model results AND the session is not yet marked finished,
     # there might still be more clips / classification to come → wait.
     if not has_model_results and not finished:
@@ -200,7 +230,7 @@ def gemini_check_or_analyze():
             "recording_id": recording_id,
             "status": "waiting_for_model_results",
             "transcription_completed": True,
-            "has_transcription": has_transcription,
+            "has_transcription": has_transcription_text,
             "has_model_results": False,
             "finished": finished,
         })
@@ -208,6 +238,7 @@ def gemini_check_or_analyze():
     # READY → Run Gemini.
     # Even if has_model_results == False, the "finished" flag tells us that
     # classification has effectively completed with zero usable detections.
+    # This covers Level 2 (minimal context) and Level 3 (normal context).
 
     # Prepare CNN results object, including a default entry if empty.
     if not nonspeech_results:
@@ -229,9 +260,24 @@ def gemini_check_or_analyze():
             cnn_results_obj=cnn_results_obj,
         )
 
+        # Extract confidence-related fields safely
+        confidence_score = analysis.get("confidence_score")
+        confidence_reasoning = analysis.get("confidence_reasoning")
+
+        low_confidence = None
+        if isinstance(confidence_score, (int, float)):
+            try:
+                score_float = float(confidence_score)
+                low_confidence = score_float < 0.4
+            except (TypeError, ValueError):
+                low_confidence = None
+
         print(
-            f"[Gemini] Analysis complete for recording_id={recording_id} "
-            f"| risk={analysis.get('risk_score')} | benefit={analysis.get('benefit_score')}"
+            f"[Gemini] Analysis complete for recording_id={recording_id} | "
+            f"risk={analysis.get('risk_score')} | "
+            f"benefit={analysis.get('benefit_score')} | "
+            f"confidence_score={confidence_score} | "
+            f"low_confidence={low_confidence}"
         )
 
         # Store final Gemini result in session
@@ -242,19 +288,25 @@ def gemini_check_or_analyze():
             "recording_id": recording_id,
             "status": "completed",
             "transcription_completed": True,
-            "has_transcription": has_transcription,
+            "has_transcription": has_transcription_text,
             "has_model_results": bool(nonspeech_results),
             "num_model_results": len(nonspeech_results),
             "finished": finished,
             "analysis": analysis,
+            "confidence_score": confidence_score,
+            "confidence_reasoning": confidence_reasoning,
+            "low_confidence": low_confidence,
         })
 
     except Exception as e:
+        print(
+            f"[Gemini] ERROR during analysis for recording_id={recording_id} | error={e}"
+        )
         return jsonify({
             "recording_id": recording_id,
             "status": "gemini_error",
             "transcription_completed": transcription_completed,
-            "has_transcription": has_transcription,
+            "has_transcription": has_transcription_text,
             "has_model_results": has_model_results,
             "num_model_results": len(nonspeech_results),
             "finished": finished,
