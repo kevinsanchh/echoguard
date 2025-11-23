@@ -9,6 +9,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { format } from "date-fns";
 
 const DashboardDialog = ({
@@ -59,7 +60,6 @@ const DashboardDialog = ({
     if (isOpen) {
       document.addEventListener("mousedown", handleClickOutside);
     }
-
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
@@ -96,7 +96,7 @@ const DashboardDialog = ({
               className="relative p-4 w-full h-full max-h-[90%] max-w-2xl aspect-3/4"
             >
               <div className="h-full w-full relative bg-white rounded-lg shadow-sm dark:bg-gray-700">
-                {/* HEADER */}
+                {/* Header */}
                 <div className="p-4 md:p-5 flex justify-between items-center border-b border-neutral-100">
                   <h1 className="font-semibold text-xl">Dashboard</h1>
                   <Button
@@ -109,7 +109,7 @@ const DashboardDialog = ({
                   </Button>
                 </div>
 
-                {/* BODY */}
+                {/* Body */}
                 <div className="p-4 md:p-5 space-y-4 overflow-y-scroll">
                   <h3 className="font-semibold text-lg mb-2">Saved Recordings</h3>
 
@@ -137,6 +137,16 @@ const DashboardDialog = ({
                           const isLowConfidence =
                             typeof confidence === "number" && confidence <= 0.6;
 
+                          const confidenceColor =
+                            confidence <= 0.4
+                              ? "text-red-600"
+                              : confidence <= 0.7
+                              ? "text-yellow-600"
+                              : "text-green-600";
+
+                          const firstSentenceReasoning =
+                            (record.confidence_reasoning || "").split(".")[0] + ".";
+
                           return (
                             <AccordionItem
                               key={record.id}
@@ -149,7 +159,6 @@ const DashboardDialog = ({
                                     Recording{" "}
                                     {format(new Date(record.date), "MMM. dd, yyyy h:mm a")}
                                   </h1>
-
                                   <div className="grid grid-cols-3 gap-2">
                                     {record.detections.map((det: any, i: number) => (
                                       <div
@@ -166,7 +175,6 @@ const DashboardDialog = ({
                                 </div>
                               </AccordionTrigger>
 
-                              {/* EXPANDED CONTENT */}
                               <AccordionContent asChild className="flex flex-col gap-4 mx-3">
                                 <motion.div
                                   initial={{ opacity: 0, height: 0 }}
@@ -176,9 +184,11 @@ const DashboardDialog = ({
                                 >
                                   <hr className="mt-2" />
 
+                                  {/* ============================= */}
                                   {/* BENEFIT ROW */}
+                                  {/* ============================= */}
                                   <div className="flex flex-row mt-4 items-start justify-between">
-                                    <div className="w-full pr-4">
+                                    <div className="w-full">
                                       <h1 className="text-green-900 mb-2">
                                         Benefit Score & Analysis
                                       </h1>
@@ -191,31 +201,52 @@ const DashboardDialog = ({
                                       </div>
                                     </div>
 
-                                    {/* SCORE BOX IN TOP RIGHT — NO YELLOW BORDER */}
-                                    <div className="relative bg-green-100 border border-green-600 rounded-md aspect-square size-10 flex items-center justify-center">
-                                      {isLowConfidence && (
-                                        <AlertTriangle
-                                          size={12}
-                                          className="absolute top-0.5 right-0.5 text-yellow-500"
-                                        />
-                                      )}
+                                    {/* SCORE BOX → Tooltip Wrapper */}
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div className="cursor-pointer relative">
+                                          <div className="bg-green-100 border border-green-600 aspect-square items-center justify-center flex size-10 rounded-md relative">
+                                            {isLowConfidence && (
+                                              <AlertTriangle
+                                                size={12}
+                                                className="absolute top-1 right-1 text-yellow-500"
+                                              />
+                                            )}
+                                            <h1 className="text-green-600 text-sm font-semibold">
+                                              {record.benefit_score == null
+                                                ? "N/A"
+                                                : String(record.benefit_score).split(".")[0] + "%"}
+                                            </h1>
+                                          </div>
+                                        </div>
+                                      </TooltipTrigger>
 
-                                      <h1 className="text-green-600 text-sm font-semibold">
-                                        {record.benefit_score == null
-                                          ? "N/A"
-                                          : String(record.benefit_score).split(".")[0] + "%"}
-                                      </h1>
-                                    </div>
+                                      {/* Tooltip */}
+                                      <TooltipContent
+                                        className="
+                                          max-w-xs p-2 text-sm
+                                          bg-neutral-50 text-neutral-700
+                                          border border-neutral-200
+                                          rounded-md shadow-md
+                                          whitespace-normal text-left leading-snug w-auto
+                                        "
+                                      >
+                                        <p className={`font-semibold ${confidenceColor}`}>
+                                          Confidence: {confidence?.toFixed(2)}
+                                        </p>
+                                        <p>{firstSentenceReasoning}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
                                   </div>
 
                                   <hr className="mt-4" />
 
+                                  {/* ============================= */}
                                   {/* RISK ROW */}
+                                  {/* ============================= */}
                                   <div className="flex flex-row mt-4 items-start justify-between">
-                                    <div className="w-full pr-4">
-                                      <h1 className="text-red-900 mb-2">
-                                        Risk Score & Analysis
-                                      </h1>
+                                    <div className="w-full">
+                                      <h1 className="text-red-900 mb-2">Risk Score & Analysis</h1>
                                       <div className="text-neutral-900">
                                         {record.risk_reasoning == null ? (
                                           <div className="loader text-sm"></div>
@@ -225,21 +256,42 @@ const DashboardDialog = ({
                                       </div>
                                     </div>
 
-                                    {/* SCORE BOX IN TOP RIGHT — NO YELLOW BORDER */}
-                                    <div className="relative bg-red-100 border border-red-600 rounded-md aspect-square size-10 flex items-center justify-center">
-                                      {isLowConfidence && (
-                                        <AlertTriangle
-                                          size={12}
-                                          className="absolute top-0.5 right-0.5 text-yellow-500"
-                                        />
-                                      )}
+                                    {/* SCORE BOX → Tooltip Wrapper */}
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <div className="cursor-pointer relative">
+                                          <div className="bg-red-100 border border-red-600 aspect-square items-center justify-center flex size-10 rounded-md relative">
+                                            {isLowConfidence && (
+                                              <AlertTriangle
+                                                size={12}
+                                                className="absolute top-1 right-1 text-yellow-500"
+                                              />
+                                            )}
+                                            <h1 className="text-red-600 text-sm font-semibold">
+                                              {record.risk_score == null
+                                                ? "N/A"
+                                                : String(record.risk_score).split(".")[0] + "%"}
+                                            </h1>
+                                          </div>
+                                        </div>
+                                      </TooltipTrigger>
 
-                                      <h1 className="text-red-600 text-sm font-semibold">
-                                        {record.risk_score == null
-                                          ? "N/A"
-                                          : String(record.risk_score).split(".")[0] + "%"}
-                                      </h1>
-                                    </div>
+                                      {/* Tooltip */}
+                                      <TooltipContent
+                                        className="
+                                          max-w-xs p-2 text-sm
+                                          bg-neutral-50 text-neutral-700
+                                          border border-neutral-200
+                                          rounded-md shadow-md
+                                          whitespace-normal text-left leading-snug w-auto
+                                        "
+                                      >
+                                        <p className={`font-semibold ${confidenceColor}`}>
+                                          Confidence: {confidence?.toFixed(2)}
+                                        </p>
+                                        <p>{firstSentenceReasoning}</p>
+                                      </TooltipContent>
+                                    </Tooltip>
                                   </div>
                                 </motion.div>
                               </AccordionContent>
@@ -250,7 +302,7 @@ const DashboardDialog = ({
                   </Accordion>
                 </div>
 
-                {/* CLEAR HISTORY BUTTON */}
+                {/* Clear All History */}
                 {typeof window !== "undefined" &&
                   (() => {
                     const data = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
@@ -279,3 +331,4 @@ const DashboardDialog = ({
 };
 
 export default DashboardDialog;
+
