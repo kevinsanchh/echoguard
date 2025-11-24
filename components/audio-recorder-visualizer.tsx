@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
+import { AnimatePresence, motion } from "framer-motion";
 
 // --- ffmpeg.wasm imports ---
 import { FFmpeg } from "@ffmpeg/ffmpeg";
@@ -69,6 +70,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const [isAtBottom, setIsAtBottom] = useState(true);
+ const [notEnoughContextMessage, setNotEnoughContextMessage] = useState<string | null>(null);
 
   const scrollToBottom = useCallback(() => {
     const el = mlFlagsContainerRef.current;
@@ -767,12 +769,11 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
       console.warn("Gemini returned NOT ENOUGH CONTEXT. Stopping polling.");
 
       setIsAnalyzing(false);
-      setGeminiResult({
-        not_enough_context: true,
-        message: data.message,
-      });
 
-      // Store minimal info in localStorage so dashboard can display message
+      // Show the popup modal
+      setNotEnoughContextMessage(data.message || "Gemini could not analyze this audio.");
+
+      // Store minimal entry so playback still works
       const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
 
       localStorage.setItem(
@@ -1182,6 +1183,43 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
 
   return (
     <main className="max-w-5xl w-full">
+        <AnimatePresence>
+      {notEnoughContextMessage && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className="fixed inset-0 z-50 flex items-center justify-center 
+                    bg-black/20 backdrop-blur-[1px]"
+        >
+          {/* Modal Card */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className="bg-white rounded-xl shadow-lg p-6 w-[22rem]
+                      text-center border border-neutral-200"
+          >
+            <h2 className="text-lg font-semibold mb-2">Not Enough Context</h2>
+
+            <p className="text-sm text-neutral-600 mb-4 leading-relaxed">
+              No meaningful speech or environmental audio was detected in this
+              recording. Please try recording again with more context.
+            </p>
+
+            <Button
+              className="w-full bg-neutral-900 text-white hover:bg-neutral-800"
+              onClick={() => setNotEnoughContextMessage(null)}
+            >
+              OK
+            </Button>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+
       <div
         className={cn(
           "flex h-16 rounded-md  w-full items-center justify-center gap-2 ",
