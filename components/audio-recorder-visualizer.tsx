@@ -408,6 +408,91 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     }
   };
 
+  // NEW — Upload-specific backend sender
+async function sendUploadedAudioToBackend(wavBlob: Blob) {
+  const formData = new FormData();
+  formData.append("audio", wavBlob, `uploaded_audio_${Date.now()}.wav`);
+
+  try {
+    const response = await fetch("http://localhost:8080/process/upload-audio", {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const txt = await response.text();
+      console.error("Upload-Audio backend error:", txt);
+      throw new Error("Upload audio pipeline failed.");
+    }
+
+    // ⭐ Mirror live-flow naming (`responseData`)
+    const responseData = await response.json();
+    console.log("Upload-Audio backend JSON:", responseData);
+
+    // ⭐ Mirror detection-capture logic from sendAudioToBackend
+    if (
+      responseData.analysis &&
+      Array.isArray(responseData.analysis.model_results)
+    ) {
+      const now = new Date().toLocaleTimeString();
+
+      responseData.analysis.model_results.forEach(
+        (det: { class: string; confidence: number }) => {
+          setMlFlags((prev) => [
+            ...prev,
+            {
+              label: det.class,
+              confidence: det.confidence,
+              time: now,
+            },
+          ]);
+        }
+      );
+    }
+
+    // ⭐ Your full original dashboard-saving logic — unchanged
+    const existing =
+      JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
+
+    const newEntry = {
+      id: responseData.recording_id, // REQUIRED for dashboard
+      date: new Date().toLocaleString(),
+
+      has_transcription: responseData.has_transcription ?? true,
+      has_model_results: responseData.has_model_results ?? true,
+      num_model_results: responseData.num_model_results ?? 0,
+
+      // Transcription + analysis (Gemini)
+      benefit_reasoning: responseData.analysis?.benefit_reasoning ?? null,
+      benefit_score: responseData.analysis?.benefit_score ?? null,
+      risk_reasoning: responseData.analysis?.risk_reasoning ?? null,
+      risk_score: responseData.analysis?.risk_score ?? null,
+
+      confidence_score: responseData.analysis?.confidence_score ?? null,
+      confidence_reasoning: responseData.analysis?.confidence_reasoning ?? null,
+
+      // Not enough context case
+      not_enough_context: responseData.status === "not_enough_context",
+      message: responseData.message || null,
+
+      // Store detections for dashboard environmental-sound block
+      detections: responseData.analysis?.model_results ?? [],
+    };
+
+    localStorage.setItem(
+      "echoguard_recordings",
+      JSON.stringify([...existing, newEntry])
+    );
+
+    console.log("Dashboard entry saved for upload:", newEntry);
+
+    return responseData;
+  } catch (err) {
+    console.error("Upload audio pipeline error:", err);
+    throw err;
+  }
+}
+
   // Drawing utilities for the canvas (moved outside useEffect for access)
   const drawLiveWaveform = (
     canvasCtx: CanvasRenderingContext2D,
@@ -840,52 +925,61 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const file = e.target.files?.[0];
+  if (!file) return;
 
-    if (!ffmpegRef.current || !ffmpegLoaded) {
-      alert("FFmpeg is still loading or failed to load. Please wait or refresh.");
-      return;
-    }
-
-    setRecordingPhase("converting");
-    setFfmpegLoadingMessage("Converting uploaded audio for processing...");
-
-    try {
-      const inputExt = file.name.split(".").pop() || "";
-      const inputName = `upload_input_${Date.now()}.${inputExt}`;
-      const outputName = `upload_output_${Date.now()}.wav`;
-
-      await ffmpegRef.current!.writeFile(inputName, await fetchFile(file));
-      await ffmpegRef.current!.exec(["-i", inputName, outputName]);
-      const data = await ffmpegRef.current!.readFile(outputName);
-      const wavBlob = new Blob([(data as any).buffer], { type: "audio/wav" });
-
-      await sendAudioToBackend(wavBlob);
-
-      setFinalAudioBlob(wavBlob);
-
-      const tempAudioContext = new window.AudioContext();
-      const audioBuffer = await tempAudioContext.decodeAudioData(await wavBlob.arrayBuffer());
-      reviewAudioBufferRef.current = audioBuffer;
-      setTotalAudioDuration(audioBuffer.duration);
-      tempAudioContext.close();
-      setRecordingPhase("review");
-
-      await ffmpegRef.current!.deleteFile(inputName);
-      await ffmpegRef.current!.deleteFile(outputName);
-
-      e.target.value = "";
-      console.log("Uploaded file processed and ready for review.");
-    } catch (e) {
-      console.error("Error processing uploaded file:", e);
-      alert("Failed to process uploaded file: " + (e as Error).message);
-      setRecordingPhase("idle");
-      setTotalAudioDuration(0);
-      setFinalAudioBlob(null);
-      reviewAudioBufferRef.current = null;
-    }
+  if (!ffmpegRef.current || !ffmpegLoaded) {
+    alert("FFmpeg is still loading. Please wait.");
+    return;
   }
+
+  setRecordingPhase("converting");
+  setFfmpegLoadingMessage("Converting uploaded audio for processing...");
+
+  try {
+    // Convert uploaded file → WAV using FFmpeg
+    const ext = file.name.split(".").pop() || "";
+    const inputName = `upload_input_${Date.now()}.${ext}`;
+    const outputName = `upload_output_${Date.now()}.wav`;
+
+    await ffmpegRef.current.writeFile(inputName, await fetchFile(file));
+    await ffmpegRef.current.exec(["-i", inputName, outputName]);
+
+    const data = await ffmpegRef.current.readFile(outputName);
+    const wavBlob = new Blob([(data as any).buffer], { type: "audio/wav" });
+
+    await ffmpegRef.current.deleteFile(inputName);
+    await ffmpegRef.current.deleteFile(outputName);
+
+    // Send WAV to backend using upload-specific flow
+    const result = await sendUploadedAudioToBackend(wavBlob);
+    console.log("Backend upload result:", result);
+
+    recordingIdRef.current = result.recording_id;
+
+    // Display WAV in review player
+    setFinalAudioBlob(wavBlob);
+
+    const tempCtx = new window.AudioContext();
+    const audioBuffer = await tempCtx.decodeAudioData(await wavBlob.arrayBuffer());
+    reviewAudioBufferRef.current = audioBuffer;
+    setTotalAudioDuration(audioBuffer.duration);
+    tempCtx.close();
+
+    setRecordingPhase("review");
+    e.target.value = "";
+
+    console.log("Upload file processed and ready for review.");
+
+  } catch (err) {
+    console.error("Upload handling error:", err);
+    alert("Failed to process uploaded file.");
+    setRecordingPhase("idle");
+    reviewAudioBufferRef.current = null;
+    setFinalAudioBlob(null);
+  }
+}
+
 
   const togglePlayback = async () => {
     if (!finalAudioBlob || !reviewAudioBufferRef.current) {
