@@ -265,3 +265,244 @@ def send_cnn_model_result_to_frontend(recording_id, clip_index, classification_r
         "threshold": classification_result.get("threshold"),
         "is_last_clip": classification_result.get("is_last_clip", False),
     }
+
+def classify_nonspeech_for_upload(waveform, sample_rate: int = 16000):
+    """
+    Classify NON-SPEECH audio for the upload workflow.
+
+    Behavior:
+    - Takes a stitched NON-SPEECH waveform tensor: shape (channels, samples).
+    - Splits it into <= 5 second chunks based on sample_rate.
+    - For each chunk:
+        * Encodes as in-memory WAV
+        * Sends to the validation endpoint
+        * If valid -> sends to the model endpoint
+        * Collects a simplified result:
+              {"index": chunk_index, "prediction": ..., "confidence": ...}
+
+    Returns:
+        List[dict]: one entry per VALID chunk.
+    """
+    import io
+    import torchaudio
+
+    if not isinstance(waveform, torch.Tensor):
+        waveform = torch.tensor(waveform)
+
+    # Ensure (channels, samples)
+    if waveform.ndim == 1:
+        waveform = waveform.unsqueeze(0)
+
+    total_samples = waveform.shape[1]
+    if total_samples == 0:
+        print("[Router-Upload] WARNING: Empty NON-SPEECH waveform for classification.")
+        return []
+
+    max_chunk_samples = int(5 * sample_rate)  # 5-second chunks
+    chunk_results = []
+    chunk_index = 0
+    start = 0
+
+    while start < total_samples:
+        end = min(start + max_chunk_samples, total_samples)
+        chunk = waveform[:, start:end]
+
+        # Skip zero-length chunks defensively
+        if chunk.shape[1] == 0:
+            start = end
+            chunk_index += 1
+            continue
+
+        duration_sec = chunk.shape[1] / float(sample_rate)
+        print(
+            f"[Router-Upload] NON-SPEECH chunk | "
+            f"chunk_index={chunk_index}, samples={chunk.shape[1]}, "
+            f"duration_sec={duration_sec:.3f}"
+        )
+
+        # Encode chunk to WAV bytes (same style as route_non_speech_for_classification)
+        buffer = io.BytesIO()
+        try:
+            torchaudio.save(buffer, chunk, sample_rate, format="wav")
+            buffer.seek(0)
+        except Exception as e:
+            print(f"[Router-Upload] ERROR encoding upload chunk to WAV: {e}")
+            start = end
+            chunk_index += 1
+            continue
+
+        # ---- Call validation endpoint ----
+        try:
+            val_resp = requests.post(
+                VALIDATION_URL,
+                files={"audio": ("upload_nonspeech.wav", buffer, "audio/wav")},
+                data={
+                    # Only for logging in the validation endpoint
+                    "recording_id": "upload",
+                    "clip_index": chunk_index,
+                },
+            )
+            val_json = val_resp.json()
+        except Exception as e:
+            print(f"[Router-Upload] ERROR contacting validation endpoint: {e}")
+            start = end
+            chunk_index += 1
+            continue
+
+        if not val_json.get("valid", False):
+            print(
+                f"[Router-Upload] Validation FAILED for upload NON-SPEECH chunk | "
+                f"chunk_index={chunk_index}. Skipping model classification."
+            )
+            start = end
+            chunk_index += 1
+            continue
+
+        print(
+            f"[Router-Upload] Validation PASSED for upload NON-SPEECH chunk | "
+            f"chunk_index={chunk_index}. Sending to model endpoint."
+        )
+
+        # ---- Call model endpoint ----
+        try:
+            buffer.seek(0)
+            model_resp = requests.post(
+                MODEL_URL,
+                files={"audio": ("upload_nonspeech.wav", buffer, "audio/wav")},
+                data={
+                    "recording_id": "upload",    # dummy id; SessionManager not used
+                    "clip_index": chunk_index,
+                    "is_last_clip": "false",     # uploads don't use live "last clip" semantics
+                },
+            )
+            model_json = model_resp.json()
+        except Exception as e:
+            print(f"[Router-Upload] ERROR contacting model endpoint: {e}")
+            start = end
+            chunk_index += 1
+            continue
+
+        prediction = model_json.get("prediction")
+        confidence = model_json.get("confidence")  # NOTE: this is already in percent (0–100)
+
+        chunk_results.append({
+            "index": chunk_index,
+            "prediction": prediction,
+            "confidence": confidence,
+        })
+
+        print(
+            f"[Router-Upload] Model result for chunk {chunk_index} | "
+            f"prediction={prediction}, confidence={confidence}"
+        )
+
+        start = end
+        chunk_index += 1
+
+    print(
+        f"[Router-Upload] Completed NON-SPEECH classification for upload | "
+        f"num_valid_chunks={len(chunk_results)}"
+    )
+    return chunk_results
+
+def run_gemini_for_upload(recording_id: str, transcription_text: str, nonspeech_results: list):
+    """
+    Run Gemini analysis for the upload workflow, WITHOUT SessionManager.
+
+    """
+    # Lazy import 
+    from routes.gemini_analysis import _run_gemini_analysis
+
+    transcription_completed = transcription_text is not None
+    has_transcription_text = bool(transcription_text and str(transcription_text).strip())
+    has_model_results = bool(nonspeech_results)
+    finished = True  # Upload analysis is always a one-shot, fully finished request
+
+    # ZERO-CONTEXT CASE: match Level 1 behavior from gemini_check_or_analyze
+    if transcription_completed and not has_transcription_text and not has_model_results:
+        print(
+            f"[Gemini-Upload] NOT ENOUGH CONTEXT | recording_id={recording_id} | "
+            f"empty transcript AND no model results."
+        )
+        return {
+            "recording_id": recording_id,
+            "status": "not_enough_context",
+            "message": (
+                "No meaningful speech or environmental audio was detected in this "
+                "recording. Please try recording again with more content."
+            ),
+            "transcription_completed": True,
+            "has_transcription": False,
+            "has_model_results": False,
+            "finished": finished,
+        }
+
+    # Prepare CNN results object, including a default entry if no detections
+    if not nonspeech_results:
+        cnn_results_obj = [{
+            "class": "none_detected",
+            "confidence": 0.0,
+            "note": (
+                "No environmental sounds passed validation; the audio was primarily "
+                "speech or silence, so the environmental sound model did not produce "
+                "any detections."
+            ),
+        }]
+        num_model_results = 0
+    else:
+        cnn_results_obj = nonspeech_results
+        num_model_results = len(nonspeech_results)
+
+    try:
+        analysis = _run_gemini_analysis(
+            transcription_text=transcription_text,
+            cnn_results_obj=cnn_results_obj,
+        )
+
+        confidence_score = analysis.get("confidence_score")
+        confidence_reasoning = analysis.get("confidence_reasoning")
+
+        low_confidence = None
+        if isinstance(confidence_score, (int, float)):
+            try:
+                score_float = float(confidence_score)
+                low_confidence = score_float < 0.4
+            except (TypeError, ValueError):
+                low_confidence = None
+
+        print(
+            f"[Gemini-Upload] Analysis complete | recording_id={recording_id} | "
+            f"risk={analysis.get('risk_score')} | "
+            f"benefit={analysis.get('benefit_score')} | "
+            f"confidence_score={confidence_score} | "
+            f"low_confidence={low_confidence}"
+        )
+
+        return {
+            "recording_id": recording_id,
+            "status": "completed",
+            "transcription_completed": transcription_completed,
+            "has_transcription": has_transcription_text,
+            "has_model_results": has_model_results,
+            "num_model_results": num_model_results,
+            "finished": finished,
+            "analysis": analysis,
+            "confidence_score": confidence_score,
+            "confidence_reasoning": confidence_reasoning,
+            "low_confidence": low_confidence,
+        }
+
+    except Exception as e:
+        print(
+            f"[Gemini-Upload] ERROR during analysis | recording_id={recording_id} | error={e}"
+        )
+        return {
+            "recording_id": recording_id,
+            "status": "gemini_error",
+            "transcription_completed": transcription_completed,
+            "has_transcription": has_transcription_text,
+            "has_model_results": has_model_results,
+            "num_model_results": len(nonspeech_results),
+            "finished": finished,
+            "error": str(e),
+        }
