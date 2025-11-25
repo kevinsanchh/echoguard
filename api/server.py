@@ -17,6 +17,7 @@ from routes.transcribe import transcribe_bp
 from routes.gemini_analysis import gemini_bp
 from routes.cnn_model import model_bp
 from routes.gemini_result_endpoint import gemini_result_bp
+from routes.upload_audio import upload_bp
 
 # app instance
 app = Flask(__name__)
@@ -52,6 +53,7 @@ app.register_blueprint(transcribe_bp)
 app.register_blueprint(gemini_bp)
 app.register_blueprint(model_bp)
 app.register_blueprint(gemini_result_bp)
+app.register_blueprint(upload_bp)
 
 
 # To run locally use 'python server.py'
