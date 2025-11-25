@@ -408,7 +408,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     }
   };
 
-  // NEW — Upload-specific backend sender
+ // NEW — Upload-specific backend sender
 async function sendUploadedAudioToBackend(wavBlob: Blob) {
   const formData = new FormData();
   formData.append("audio", wavBlob, `uploaded_audio_${Date.now()}.wav`);
@@ -425,37 +425,25 @@ async function sendUploadedAudioToBackend(wavBlob: Blob) {
       throw new Error("Upload audio pipeline failed.");
     }
 
-    // ⭐ Mirror live-flow naming (`responseData`)
+    // Mirror live-flow naming
     const responseData = await response.json();
     console.log("Upload-Audio backend JSON:", responseData);
 
-    // ⭐ Mirror detection-capture logic from sendAudioToBackend
-    if (
-      responseData.analysis &&
-      Array.isArray(responseData.analysis.model_results)
-    ) {
-      const now = new Date().toLocaleTimeString();
-
-      responseData.analysis.model_results.forEach(
-        (det: { class: string; confidence: number }) => {
-          setMlFlags((prev) => [
-            ...prev,
-            {
-              label: det.class,
-              confidence: det.confidence,
-              time: now,
-            },
-          ]);
-        }
-      );
-    }
-
-    // ⭐ Your full original dashboard-saving logic — unchanged
     const existing =
       JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
 
+    // SAFELY read model_results for upload workflow
+    const safeModelResults =
+      responseData.analysis &&
+      Array.isArray(responseData.analysis.model_results)
+        ? responseData.analysis.model_results.map((det: any) => ({
+            label: det.class,
+            confidence: det.confidence,
+          }))
+        : [];
+
     const newEntry = {
-      id: responseData.recording_id, // REQUIRED for dashboard
+      id: responseData.recording_id,
       date: new Date().toLocaleString(),
 
       has_transcription: responseData.has_transcription ?? true,
@@ -475,8 +463,8 @@ async function sendUploadedAudioToBackend(wavBlob: Blob) {
       not_enough_context: responseData.status === "not_enough_context",
       message: responseData.message || null,
 
-      // Store detections for dashboard environmental-sound block
-      detections: responseData.analysis?.model_results ?? [],
+      // Unified detection block (both live + upload use this)
+      detections: safeModelResults,
     };
 
     localStorage.setItem(

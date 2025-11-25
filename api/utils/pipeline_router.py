@@ -478,6 +478,22 @@ def run_gemini_for_upload(recording_id: str, transcription_text: str, nonspeech_
             f"low_confidence={low_confidence}"
         )
 
+        # 1. Format detections in the SAME shape as live workflow (cnn_model.py)
+        if nonspeech_results:
+            formatted_detections = [
+                {
+                    "class": det.get("prediction"),
+                    "confidence": det.get("confidence"),
+                }
+                for det in nonspeech_results
+            ]
+        else:
+            formatted_detections = []
+
+        # 2. Inject detections into analysis payload
+        analysis["model_results"] = formatted_detections
+
+        # 3. Return full JSON
         return {
             "recording_id": recording_id,
             "status": "completed",
