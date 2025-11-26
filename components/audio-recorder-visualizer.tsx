@@ -408,8 +408,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     }
   };
 
- // NEW — Upload-specific backend sender
-async function sendUploadedAudioToBackend(wavBlob: Blob) {
+ async function sendUploadedAudioToBackend(wavBlob: Blob) {
   const formData = new FormData();
   formData.append("audio", wavBlob, `uploaded_audio_${Date.now()}.wav`);
 
@@ -425,14 +424,27 @@ async function sendUploadedAudioToBackend(wavBlob: Blob) {
       throw new Error("Upload audio pipeline failed.");
     }
 
-    // Mirror live-flow naming
     const responseData = await response.json();
     console.log("Upload-Audio backend JSON:", responseData);
 
+    // CASE 1: Not enough context
+    if (responseData.status === "not_enough_context") {
+      console.warn("Upload workflow returned NOT ENOUGH CONTEXT.");
+
+      // Popup
+      setNotEnoughContextMessage(
+        responseData.message ||
+          "No meaningful speech or environmental audio was detected."
+      );
+
+      // Tell caller to abort
+      return { ...responseData, __notEnoughContext: true };
+    }
+
+    // CASE 2: Normal upload processing
     const existing =
       JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
 
-    // SAFELY read model_results for upload workflow
     const safeModelResults =
       responseData.analysis &&
       Array.isArray(responseData.analysis.model_results)
@@ -450,7 +462,6 @@ async function sendUploadedAudioToBackend(wavBlob: Blob) {
       has_model_results: responseData.has_model_results ?? true,
       num_model_results: responseData.num_model_results ?? 0,
 
-      // Transcription + analysis (Gemini)
       benefit_reasoning: responseData.analysis?.benefit_reasoning ?? null,
       benefit_score: responseData.analysis?.benefit_score ?? null,
       risk_reasoning: responseData.analysis?.risk_reasoning ?? null,
@@ -459,11 +470,8 @@ async function sendUploadedAudioToBackend(wavBlob: Blob) {
       confidence_score: responseData.analysis?.confidence_score ?? null,
       confidence_reasoning: responseData.analysis?.confidence_reasoning ?? null,
 
-      // Not enough context case
-      not_enough_context: responseData.status === "not_enough_context",
-      message: responseData.message || null,
+      not_enough_context: false,
 
-      // Unified detection block (both live + upload use this)
       detections: safeModelResults,
     };
 
@@ -925,7 +933,7 @@ async function sendUploadedAudioToBackend(wavBlob: Blob) {
   setFfmpegLoadingMessage("Converting uploaded audio for processing...");
 
   try {
-    // Convert uploaded file → WAV using FFmpeg
+    // Convert to WAV using FFmpeg
     const ext = file.name.split(".").pop() || "";
     const inputName = `upload_input_${Date.now()}.${ext}`;
     const outputName = `upload_output_${Date.now()}.wav`;
@@ -939,13 +947,27 @@ async function sendUploadedAudioToBackend(wavBlob: Blob) {
     await ffmpegRef.current.deleteFile(inputName);
     await ffmpegRef.current.deleteFile(outputName);
 
-    // Send WAV to backend using upload-specific flow
+    // Send to backend
     const result = await sendUploadedAudioToBackend(wavBlob);
-    console.log("Backend upload result:", result);
 
+    // CASE 1: NOT ENOUGH CONTEXT
+    if (result.__notEnoughContext) {
+      console.log("Aborting upload review — Not enough context.");
+
+      // Reset UI exactly like live workflow does
+      setRecordingPhase("idle");
+      setIsAnalyzing(false);
+      setMlFlags([]);
+      setFinalAudioBlob(null);
+      reviewAudioBufferRef.current = null;
+      e.target.value = "";
+      return;
+    }
+
+    // CASE 2 — Normal Upload Workflow
     recordingIdRef.current = result.recording_id;
 
-    // Display WAV in review player
+    // Load WAV in review player
     setFinalAudioBlob(wavBlob);
 
     const tempCtx = new window.AudioContext();
@@ -958,7 +980,6 @@ async function sendUploadedAudioToBackend(wavBlob: Blob) {
     e.target.value = "";
 
     console.log("Upload file processed and ready for review.");
-
   } catch (err) {
     console.error("Upload handling error:", err);
     alert("Failed to process uploaded file.");
