@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import os
 from pathlib import Path
+from faster_whisper import WhisperModel
 
 # ML Model Imports & Configuration - Copied from model.py
 import torch.nn.functional as F
@@ -43,6 +44,20 @@ try:
     print("DEBUG: VAD model loaded successfully.")
 except Exception as e:
     print(f"ERROR: Failed to load VAD model: {e}")
+    raise e
+
+# Load Faster-Whisper model at startup
+try:
+    whisper_model = WhisperModel(
+        "small",
+        device="cpu",
+        compute_type="int8"
+    )
+    app.config["whisper_model"] = whisper_model
+    app.config["whisper_device"] = "cpu"
+    print("DEBUG: Whisper transcription model loaded successfully.")
+except Exception as e:
+    print(f"ERROR: Failed to load Whisper transcription model: {e}")
     raise e
 
 # Register Blueprints

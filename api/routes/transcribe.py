@@ -20,38 +20,28 @@ from utils.pipeline_router import send_to_gemini
 
 transcribe_bp = Blueprint("transcribe", __name__, url_prefix="/process")
 
-# --------------------------------------------------------------------
-# GLOBAL WHISPER MODEL (lazy-loaded once per process)
-# --------------------------------------------------------------------
-_WHISPER_MODEL = None
-_WHISPER_DEVICE = None
+# routes/transcribe.py
 
+from flask import Blueprint, request, jsonify, current_app
+from utils.session_manager import (
+    get_all_full_clips,
+    mark_session_finished,
+    delete_all_full_clips,
+    store_transcription,
+)
 
-def _get_whisper_model():
-    """
-    Lazily load the Faster-Whisper model (small) once.
-    Uses CUDA if available, otherwise CPU.
-    """
-    global _WHISPER_MODEL, _WHISPER_DEVICE
+import os
+from pathlib import Path
 
-    if _WHISPER_MODEL is not None:
-        return _WHISPER_MODEL, _WHISPER_DEVICE
+import torch
+import torchaudio
+from utils.audio_utils import resample_to_16k
+from utils.pipeline_router import send_to_gemini
 
-    device = "cpu"
-    compute_type = "int8"
+# No more lazy-loading variables or functions.
+# Whisper model is loaded globally in server.py at startup.
 
-    compute_type = "float16" if device == "cuda" else "int8"
-
-    print(
-        f"[Transcribe] Loading Faster-Whisper model 'small' | "
-        f"device={device}, compute_type={compute_type}"
-    )
-    model = WhisperModel("small", device=device, compute_type=compute_type)
-
-    _WHISPER_MODEL = model
-    print("[Transcribe] Faster-Whisper model loaded successfully.")
-
-    return _WHISPER_MODEL, _WHISPER_DEVICE
+transcribe_bp = Blueprint("transcribe", __name__, url_prefix="/process")
 
 
 @transcribe_bp.route("/transcribe", methods=["POST"])
@@ -65,21 +55,17 @@ def transcribe_full_recording():
     - Loads each clip waveform using torchaudio.
     - Ensures consistent sample rate and mono channel.
     - Concatenates all clips into a single waveform.
-    - Runs Faster-Whisper (small) to get:
-        - full transcript text
-        - per-segment timestamps
+    - Runs Faster-Whisper (small) preloaded globally in server.py.
     - On SUCCESS:
         - Logs summary.
-        - (Future step) Stores transcript in SessionManager.
-        - Deletes all full clip files for this recording.
+        - Stores transcript in SessionManager.
+        - Deletes all full clip files.
         - Marks the session as finished.
-        - Returns JSON with transcript and segments.
+        - Triggers Gemini wrapper.
     - On FAILURE:
         - Logs error.
         - Does NOT delete full clips.
         - Does NOT mark session as finished.
-        - Returns JSON with status="error".
-
     """
 
     # 1. Extract required field
@@ -92,15 +78,10 @@ def transcribe_full_recording():
     # 2. Retrieve FULL CLIPS for this recording
     clip_paths = get_all_full_clips(recording_id)
 
-    print(
-        f"[Transcribe] Received transcription request | recording_id={recording_id}"
-    )
+    print(f"[Transcribe] Received transcription request | recording_id={recording_id}")
 
     if not clip_paths:
-        print(
-            f"[Transcribe] WARNING: No FULL CLIPS found for recording {recording_id}."
-        )
-        # We still mark as finished (consistent with previous behavior)
+        print(f"[Transcribe] WARNING: No FULL CLIPS found for recording {recording_id}.")
         mark_session_finished(recording_id)
         return jsonify({
             "recording_id": recording_id,
@@ -138,7 +119,7 @@ def transcribe_full_recording():
             if base_sample_rate is None:
                 base_sample_rate = sr
             elif sr != base_sample_rate:
-                # Simple resample to the base sample rate
+                # Resample to the base sample rate
                 wav = torchaudio.functional.resample(wav, sr, base_sample_rate)
 
             waveforms.append(wav)
@@ -166,16 +147,13 @@ def transcribe_full_recording():
             f"sample_rate={base_sample_rate}, total_samples={num_samples}, "
             f"duration={duration_sec:.3f}s"
         )
-        
-        orig_sr = base_sample_rate
-        orig_duration = duration_sec
 
+        # Resample to 16kHz for Whisper
         merged_waveform_16k, new_sr = resample_to_16k(
             waveform=merged_waveform,
-            orig_sr=orig_sr,
+            orig_sr=base_sample_rate,
             target_sr=16000,
         )
-
         print(f"[Transcribe] Resampled merged waveform to 16kHz | ")
 
     except Exception as e:
@@ -189,11 +167,12 @@ def transcribe_full_recording():
             "message": f"Failed to prepare audio for transcription: {str(e)}"
         }), 500
 
-    # 4. Run Faster-Whisper transcription
+    # 4. Run Faster-Whisper transcription (GLOBAL MODEL)
     try:
-        model, device = _get_whisper_model()
+        model = current_app.config["whisper_model"]
+        device = "cpu"  # for logging consistency
 
-        # Convert to numpy 1D array for Faster-Whisper
+        # Convert to numpy array for Faster-Whisper
         audio_np = merged_waveform_16k.squeeze(0).numpy()
 
         print(
@@ -201,14 +180,13 @@ def transcribe_full_recording():
             f"recording_id={recording_id}, device={device}"
         )
 
-        # Basic transcription call (language auto-detection, transcription only)
+        # Transcribe
         segments, info = model.transcribe(
             audio_np,
             beam_size=5,
             task="transcribe"
         )
 
-        # Materialize segments from generator
         segments = list(segments)
 
         full_text_parts = []
@@ -224,7 +202,9 @@ def transcribe_full_recording():
                 "text": text.strip()
             })
 
-        full_text = " ".join(part.strip() for part in full_text_parts if part.strip())
+        full_text = " ".join(
+            part.strip() for part in full_text_parts if part.strip()
+        )
 
         print(
             f"[Transcribe] Transcription completed | recording_id={recording_id}, "
@@ -242,14 +222,13 @@ def transcribe_full_recording():
             f"[Transcribe] Stored transcription | recording_id={recording_id}\n"
             f"[Transcribe] TRANSCRIPT TEXT:\n{full_text}\n"
             f"[Transcribe] NUM SEGMENTS: {len(segments)}"
-        )   
+        )
 
     except Exception as e:
         print(
             f"[Transcribe] ERROR: Faster-Whisper transcription failed | "
             f"recording_id={recording_id} | error={e}"
         )
-
         return jsonify({
             "recording_id": recording_id,
             "status": "error",
@@ -263,18 +242,17 @@ def transcribe_full_recording():
             f"[Transcribe] Deleted all FULL CLIP files for recording_id={recording_id}"
         )
     except Exception as cleanup_err:
-        # Non-fatal: we still consider transcription successful, but log it.
         print(
             f"[Transcribe] WARNING: Failed to delete FULL CLIP files for "
             f"recording_id={recording_id} | error={cleanup_err}"
         )
 
-    # Mark session finished
     mark_session_finished(recording_id)
     print(
         f"[Transcribe] Transcription pipeline complete for recording_id={recording_id}"
     )
 
+    # Trigger Gemini wrapper
     try:
         print(f"[Transcribe] Triggering Gemini wrapper | recording_id={recording_id}")
         gemini_result = send_to_gemini(recording_id)
