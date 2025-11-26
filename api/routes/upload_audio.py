@@ -27,11 +27,14 @@ upload_bp = Blueprint("upload", __name__, url_prefix="/process")
 def upload_audio_analysis():
     """
     Upload-based audio pipeline:
-    - User uploads a full audio file.
-    - Run VAD.
-    - Classify NON-SPEECH segments.
-    - Transcribe entire waveform (global Whisper model).
-    - Run Gemini analysis.
+    - Load file
+    - NORMALIZE waveform (for VAD only)
+    - Run VAD on normalized
+    - Extract speech / NON-speech from RAW waveform
+    - Stitch NON-speech (using RAW waveform)
+    - Validate + classify NON-speech (RAW only)
+    - Transcribe full RAW waveform (unchanged)
+    - Run Gemini
     """
 
     # 1. Validate request
@@ -44,18 +47,10 @@ def upload_audio_analysis():
         print("\n[Upload] ERROR: Empty filename for audio upload.\n")
         return jsonify({"error": "No audio filename provided"}), 400
 
-    # -------------------------------------------
-    # FIX: Upload workflow should not require a recording_id.
-    # If none provided, generate one exactly like the original behavior.
-    # -------------------------------------------
     recording_id = request.form.get("recording_id", type=str)
-
     if recording_id is None:
-        recording_id = f"upload-{uuid.uuid4()}"
-        print(f"[Upload] No recording_id provided — generated synthetic ID: {recording_id}")
-    else:
-        print(f"[Upload] Using provided recording_id: {recording_id}")
-    # -------------------------------------------
+        print("\n[Upload] ERROR: Missing recording_id.\n")
+        return jsonify({"error": "Missing recording_id"}), 400
 
     print(
         "\n" + "=" * 70 +
@@ -68,47 +63,50 @@ def upload_audio_analysis():
     try:
         instance_path = current_app.instance_path
 
-        # 2. Save uploaded WAV file to instance/
+        # 2. Save uploaded WAV file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav", dir=instance_path) as tmp:
             audio_file.save(tmp.name)
             temp_path = Path(tmp.name)
 
         final_path = Path(instance_path) / f"uploaded_{recording_id}.wav"
         os.replace(temp_path, final_path)
-        temp_path = final_path  # update reference
+        temp_path = final_path
 
         print(f"[Upload] Saved uploaded WAV file to {final_path}")
 
-        # 3. Load waveform
-        waveform = load_audio(final_path)
+        # 3. Load RAW waveform
+        raw_waveform = load_audio(final_path)
 
-        if not isinstance(waveform, torch.Tensor):
-            waveform = torch.tensor(waveform)
+        if not isinstance(raw_waveform, torch.Tensor):
+            raw_waveform = torch.tensor(raw_waveform)
 
-        if waveform.ndim == 1:
-            waveform = waveform.unsqueeze(0)
+        if raw_waveform.ndim == 1:
+            raw_waveform = raw_waveform.unsqueeze(0)
 
         with torch.no_grad():
-            max_abs = waveform.abs().max().item()
-            rms = torch.sqrt(torch.mean(waveform ** 2)).item()
+            max_abs = raw_waveform.abs().max().item()
+            rms = torch.sqrt(torch.mean(raw_waveform ** 2)).item()
 
         print(
-            f"[Upload] Waveform stats | "
-            f"shape={tuple(waveform.shape)}, max_abs={max_abs:.6f}, rms={rms:.6f}"
+            f"[Upload] Waveform stats (RAW) | "
+            f"shape={tuple(raw_waveform.shape)}, max_abs={max_abs:.6f}, rms={rms:.6f}"
         )
 
-        # NORMALIZATION
+        # >>> KEY CHANGE #1: Preserve RAW waveform for segmentation + CNN
+        waveform_for_vad = raw_waveform.clone()
+
+        # 4. NORMALIZATION (VAD ONLY)
         if max_abs > 1e-4:
             target_peak = 0.9
             gain = target_peak / max_abs
-            waveform = (waveform * gain).clamp(-1.0, 1.0)
+            waveform_for_vad = (waveform_for_vad * gain).clamp(-1.0, 1.0)
 
             with torch.no_grad():
-                new_max = waveform.abs().max().item()
-                new_rms = torch.sqrt(torch.mean(waveform ** 2)).item()
+                new_max = waveform_for_vad.abs().max().item()
+                new_rms = torch.sqrt(torch.mean(waveform_for_vad ** 2)).item()
 
             print(
-                f"[Upload] Applied normalization | "
+                f"[Upload] Applied normalization for VAD | "
                 f"gain={gain:.2f}, new_max_abs={new_max:.6f}, new_rms={new_rms:.6f}"
             )
         else:
@@ -116,14 +114,14 @@ def upload_audio_analysis():
                 f"[Upload] Waveform extremely quiet (max_abs={max_abs:.6f}); skipping normalization."
             )
 
-        # 4. Retrieve VAD model
+        # 5. Retrieve VAD model
         vad_model = current_app.config["vad_model"]
         vad_helpers = current_app.config["vad_helpers"]
         sample_rate = current_app.config.get("sample_rate", 16000)
 
-        # 5. Run VAD
+        # 6. Run VAD on NORMALIZED waveform
         speech_ts = run_vad_on_waveform(
-            waveform=waveform,
+            waveform=waveform_for_vad,
             model=vad_model,
             vad_helpers=vad_helpers,
             sample_rate=sample_rate,
@@ -132,17 +130,19 @@ def upload_audio_analysis():
             min_silence_duration_ms=250,
         )
 
-        print(f"[Upload] Raw VAD speech_ts: {speech_ts}")
+        print(f"[Upload] VAD speech_ts: {speech_ts}")
         print(f"[Upload] speech_detected={len(speech_ts) > 0}, regions={len(speech_ts)}")
 
-        # 6. Segment extraction
-        speech_segments = extract_speech_segments(waveform, speech_ts)
-        nonspeech_segments = extract_nonspeech_segments(waveform, speech_ts)
+        # 7. Extract segments FROM RAW WAVEFORM (fix)
+        speech_segments = extract_speech_segments(raw_waveform, speech_ts)
+        nonspeech_segments = extract_nonspeech_segments(raw_waveform, speech_ts)
 
         print(
-            f"[Upload] Extracted segments | speech={len(speech_segments)}, nonspeech={len(nonspeech_segments)}"
+            f"[Upload] Extracted segments | speech={len(speech_segments)}, "
+            f"nonspeech={len(nonspeech_segments)}"
         )
 
+        # 8. Stitch NON-SPEECH **raw** segments
         stitched_nonspeech = stitch_segments(nonspeech_segments)
         if stitched_nonspeech is not None:
             print(
@@ -151,23 +151,24 @@ def upload_audio_analysis():
         else:
             print("[Upload] No NON-SPEECH detected.")
 
-        # 7. Classify NON-SPEECH (if present)
+        # 9. Classify NON-SPEECH using RAW waveforms
         nonspeech_results = None
         if stitched_nonspeech is not None:
             nonspeech_results = classify_nonspeech_for_upload(
-                waveform=stitched_nonspeech
+                stitched_nonspeech,
+                sample_rate=sample_rate,
             )
         else:
             print("[Upload] Skipping NON-SPEECH classification (no segments).")
 
-        # 8. Transcribe the full waveform (GLOBAL WHISPER MODEL)
+        # 10. Transcribe full RAW waveform (unchanged behavior)
         transcription_text, transcription_segments = _transcribe_uploaded_file(
             recording_id,
-            waveform,
+            raw_waveform,
             sample_rate
         )
 
-        # 9. Run Gemini wrapper
+        # 11. Run Gemini
         final_result = run_gemini_for_upload(
             recording_id=recording_id,
             transcription_text=transcription_text,

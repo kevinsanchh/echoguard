@@ -67,7 +67,6 @@ def process_vad():
             f"\n[VAD] Saved incoming WAV file '{audio_file.filename}' to {temp_path}"
         )
 
-
         final_clip_path = Path(instance_path) / f"recording_{recording_id}_clip_{clip_index}.wav"
         os.replace(temp_path, final_clip_path)
         temp_path = final_clip_path  # update reference to the new name
@@ -79,8 +78,7 @@ def process_vad():
             f"recording_id={recording_id} | clip_index={clip_index} | path={final_clip_path}"
         )
 
-
-        # 3. Load waveform
+        # 3. Load waveform (RAW)
         waveform = load_audio(final_clip_path)
 
         if not isinstance(waveform, torch.Tensor):
@@ -100,7 +98,10 @@ def process_vad():
             f"mean={mean_val:.6f}, rms={rms:.6f}"
         )
 
-        # NORMALIZATION
+        # >>> KEY CHANGE: preserve RAW waveform for segments/validation/CNN
+        raw_waveform = waveform.clone()
+
+        # NORMALIZATION (for VAD ONLY)
         if max_abs > 1e-4:
             target_peak = 0.9
             gain = target_peak / max_abs
@@ -125,7 +126,7 @@ def process_vad():
         vad_helpers = current_app.config["vad_helpers"]
         sample_rate = current_app.config.get("sample_rate", 16000)
 
-        # 5. Run VAD
+        # 5. Run VAD on the NORMALIZED waveform
         speech_ts = run_vad_on_waveform(
             waveform=waveform,
             model=vad_model,
@@ -149,9 +150,9 @@ def process_vad():
             dur_s   = end_s - start_s
             print(f"[VAD] Speech region {i}: start={start_s:.2f}s, end={end_s:.2f}s, duration={dur_s:.2f}s")
 
-        # 6. Extract segments
-        speech_segments = extract_speech_segments(waveform, speech_ts)
-        nonspeech_segments = extract_nonspeech_segments(waveform, speech_ts)
+        # 6. Extract segments FROM RAW WAVEFORM (fix: no normalized audio here)
+        speech_segments = extract_speech_segments(raw_waveform, speech_ts)
+        nonspeech_segments = extract_nonspeech_segments(raw_waveform, speech_ts)
 
         print(f"[VAD] Extracted {len(speech_segments)} speech segments for clip {clip_index}")
         print(f"[VAD] Extracted {len(nonspeech_segments)} non-speech segments for clip {clip_index}")
@@ -162,7 +163,7 @@ def process_vad():
             f"num_nonspeech_segments={len(nonspeech_segments)}"
         )
 
-        # 7. Stitch non-speech
+        # 7. Stitch non-speech (RAW segments)
         stitched_nonspeech = stitch_segments(nonspeech_segments)
 
         classification_result = None
@@ -175,7 +176,7 @@ def process_vad():
         else:
             print(f"[VAD] No NON-SPEECH audio to stitch for clip {clip_index}.")
 
-        # 8. Route non-speech for classification
+        # 8. Route non-speech for classification (RAW stitched waveform)
         if stitched_nonspeech is not None:
             store_nonspeech_segment(recording_id, clip_index)
 
@@ -194,7 +195,7 @@ def process_vad():
         else:
             print(f"[VAD] No NON-SPEECH detected for clip {clip_index}; skipping classification routing.")
 
-        # 9. Store speech segments (unchanged)
+        # 9. Store speech segments (unchanged, but using RAW segments)
         if len(speech_segments) > 0:
             store_speech_segment(recording_id, clip_index, speech_segments)
             print(f"[VAD] Confirm: stored {len(speech_segments)} speech segment(s) for clip {clip_index}")
@@ -206,9 +207,7 @@ def process_vad():
             print(f"[VAD] LAST CLIP for recording {recording_id}. Triggering transcription...")
             send_full_clips_to_transcription(recording_id)
 
-
-        # 11. TEMP DEBUG RESPONSE
-           # 11. Build response back to frontend (include CNN detections if present)
+        # 11. Build response back to frontend (include CNN detections if present)
         response_payload = {
             "message": "VAD processing completed for this clip.",
             "recording_id": recording_id,
@@ -218,7 +217,7 @@ def process_vad():
             "num_nonspeech_segments": len(nonspeech_segments),
         }
 
-           # If we got a classification result from the CNN model, merge it in
+        # If we got a classification result from the CNN model, merge it in
         if classification_result is not None:
             cnn_payload = send_cnn_model_result_to_frontend(
                 recording_id, clip_index, classification_result
@@ -234,7 +233,7 @@ def process_vad():
         return jsonify({"error": f"VAD processing failed: {str(e)}"}), 500
 
     finally:
-        # >>> IMPORTANT CHANGE <<<
+        # >>> IMPORTANT CHANGE <<< (unchanged comment)
         # We DO NOT delete final_clip_path here anymore.
         #
         # The file persists until AFTER transcription endpoint runs,
