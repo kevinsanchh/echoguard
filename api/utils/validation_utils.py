@@ -1,19 +1,5 @@
 """
 validation_utils.py
-
-FINAL UPDATED VALIDATOR (20 Nov 2025)
-
-Derived from real microphone behavior recorded in test runs.
-
-GOALS:
-- Reject muted mic, quiet room noise, and speech fragments VAD mislabels.
-- Accept real environmental non-speech events (gunshots, explosions, growling).
-- Prevent CNN hallucinations by ensuring only strong non-speech signals survive.
-- Keep compatibility with existing VAD → validate → model pipeline.
-
-FUTURE TODO:
-- Ideally compute stats BEFORE normalization (denormalized waveform).
-  For now, thresholds below are tuned to normalized values.
 """
 
 import torch
@@ -28,9 +14,7 @@ def validate_nonspeech_waveform(waveform: torch.Tensor, sample_rate: int):
         sample_rate: int Hz
     """
 
-    # ------------------------------------------------------------
-    # Shape + basic stats
-    # ------------------------------------------------------------
+
     if not isinstance(waveform, torch.Tensor):
         waveform = torch.tensor(waveform)
 
@@ -65,10 +49,6 @@ def validate_nonspeech_waveform(waveform: torch.Tensor, sample_rate: int):
         "fraction_loud": fraction_loud,
     }
 
-    # ------------------------------------------------------------
-    # VALIDATION LOGIC
-    # Derived from actual test data from your microphone.
-    # ------------------------------------------------------------
     failure_reasons = []
     is_valid = True
 
@@ -84,20 +64,20 @@ def validate_nonspeech_waveform(waveform: torch.Tensor, sample_rate: int):
 
     # 3. RMS ≥ 0.02
     # Rejects muted mic and quiet noise
-    if rms < 0.02:
+    if rms < 0.0013:
         is_valid = False
         failure_reasons.append("low_rms")
 
     # 4. Peak amplitude ≥ 0.05
     # Prevents quiet static or speech remnants boosted by normalization
-    if max_abs < 0.05:
+    if max_abs < 0.015:
         is_valid = False
         failure_reasons.append("low_peak_amplitude")
 
     # 5. Fraction loud ≥ 0.06
     # Key separation: real non-speech events (gunshots/explosions) exceed this,
     # while speech fragments typically fall below it.
-    if fraction_loud < 0.06:
+    if fraction_loud < 0.0001:
         is_valid = False
         failure_reasons.append("low_fraction_loud")
 

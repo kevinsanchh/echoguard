@@ -48,9 +48,12 @@ def upload_audio_analysis():
         return jsonify({"error": "No audio filename provided"}), 400
 
     recording_id = request.form.get("recording_id", type=str)
+
     if recording_id is None:
-        print("\n[Upload] ERROR: Missing recording_id.\n")
-        return jsonify({"error": "Missing recording_id"}), 400
+        recording_id = f"upload-{uuid.uuid4()}"
+        print(f"[Upload] No recording_id provided — generated synthetic ID: {recording_id}")
+    else:
+        print(f"[Upload] Using provided recording_id: {recording_id}")
 
     print(
         "\n" + "=" * 70 +
@@ -176,14 +179,7 @@ def upload_audio_analysis():
         )
 
         print("=" * 70)
-        return jsonify({
-            "recording_id": recording_id,
-            "transcript": transcription_text,
-            "segments": transcription_segments,
-            "nonspeech_results": nonspeech_results,
-            "gemini_result": final_result,
-            "status": "ok"
-        }), 200
+        return final_result, 200
 
     except Exception as e:
         print(f"\n[Upload] ERROR: {e}\n")
