@@ -183,6 +183,11 @@ def upload_audio_analysis():
             f"\n[Upload] Saved incoming file '{audio_file.filename}' to {temp_path}"
         )
 
+        print(
+            f"[Upload] Stored uploaded WAV file for transcription | "
+            f"path={temp_path}"
+        )
+
         # 3) Load waveform for VAD + classification using shared audio loader
         waveform = load_audio(temp_path)
 
@@ -245,9 +250,24 @@ def upload_audio_analysis():
             f"speech_detected={speech_detected} | speech_regions={len(speech_ts)}"
         )
 
+        for i, seg in enumerate(speech_ts):
+            start_s = seg["start"] / sample_rate
+            end_s = seg["end"] / sample_rate
+            dur_s = end_s - start_s
+            print(
+                f"[Upload] Speech region {i}: start={start_s:.2f}s, "
+                f"end={end_s:.2f}s, duration={dur_s:.2f}s"
+            )
+
         # 5) Extract NON-SPEECH segments and stitch
         nonspeech_segments = extract_nonspeech_segments(waveform, speech_ts)
         print(f"[Upload] Extracted {len(nonspeech_segments)} NON-SPEECH segments for upload file")
+
+        print(
+            f"[Upload] Segments summary | "
+            f"num_speech_segments={len(speech_ts)}, "
+            f"num_nonspeech_segments={len(nonspeech_segments)}"
+        )
 
         stitched_nonspeech = stitch_segments(nonspeech_segments)
         upload_nonspeech_results = []

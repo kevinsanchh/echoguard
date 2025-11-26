@@ -286,16 +286,23 @@ def classify_nonspeech_for_upload(waveform, sample_rate: int = 16000):
     import io
     import torchaudio
 
+    print("\n" + "=" * 70)
+    print("[Router-Upload] BEGIN NON-SPEECH CLASSIFICATION FOR UPLOAD")
+
     if not isinstance(waveform, torch.Tensor):
+        print("[Router-Upload] Converting numpy array → tensor")
         waveform = torch.tensor(waveform)
 
     # Ensure (channels, samples)
     if waveform.ndim == 1:
+        print("[Router-Upload] Input waveform is 1D — reshaping to mono tensor")
         waveform = waveform.unsqueeze(0)
 
     total_samples = waveform.shape[1]
+    print(f"[Router-Upload] Waveform received | shape={tuple(waveform.shape)}, total_samples={total_samples}, sample_rate={sample_rate}")
+
     if total_samples == 0:
-        print("[Router-Upload] WARNING: Empty NON-SPEECH waveform for classification.")
+        print("[Router-Upload] WARNING: Empty NON-SPEECH waveform for classification. Returning empty list.\n")
         return []
 
     max_chunk_samples = int(5 * sample_rate)  # 5-second chunks
@@ -303,88 +310,95 @@ def classify_nonspeech_for_upload(waveform, sample_rate: int = 16000):
     chunk_index = 0
     start = 0
 
+    print(f"[Router-Upload] Splitting NON-SPEECH waveform into <=5 sec chunks | max_chunk_samples={max_chunk_samples}")
+
+    # Main chunk loop
     while start < total_samples:
         end = min(start + max_chunk_samples, total_samples)
         chunk = waveform[:, start:end]
 
         # Skip zero-length chunks defensively
         if chunk.shape[1] == 0:
+            print(f"[Router-Upload] WARNING: Zero-length chunk encountered at index {chunk_index} — skipping.")
             start = end
             chunk_index += 1
             continue
 
         duration_sec = chunk.shape[1] / float(sample_rate)
         print(
-            f"[Router-Upload] NON-SPEECH chunk | "
-            f"chunk_index={chunk_index}, samples={chunk.shape[1]}, "
-            f"duration_sec={duration_sec:.3f}"
+            f"[Router-Upload] Processing NON-SPEECH chunk {chunk_index}\n"
+            f"[Router-Upload] samples={chunk.shape[1]}, duration={duration_sec:.3f}s"
         )
 
-        # Encode chunk to WAV bytes (same style as route_non_speech_for_classification)
+        # Encode chunk → WAV bytes
         buffer = io.BytesIO()
+        print(f"[Router-Upload] Encoding chunk {chunk_index} to WAV bytes...")
         try:
             torchaudio.save(buffer, chunk, sample_rate, format="wav")
             buffer.seek(0)
+            print(f"[Router-Upload] Encoding complete for chunk {chunk_index}")
         except Exception as e:
-            print(f"[Router-Upload] ERROR encoding upload chunk to WAV: {e}")
+            print(f"[Router-Upload] ERROR encoding upload chunk {chunk_index} to WAV: {e}")
             start = end
             chunk_index += 1
             continue
 
-        # ---- Call validation endpoint ----
+        # VALIDATION ENDPOINT CALL
+        print(f"[Router-Upload] Sending chunk {chunk_index} to VALIDATION endpoint...")
         try:
             val_resp = requests.post(
                 VALIDATION_URL,
                 files={"audio": ("upload_nonspeech.wav", buffer, "audio/wav")},
                 data={
-                    # Only for logging in the validation endpoint
                     "recording_id": "upload",
                     "clip_index": chunk_index,
                 },
             )
             val_json = val_resp.json()
+            print(f"[Router-Upload] Validation response for chunk {chunk_index}: {val_json}")
         except Exception as e:
-            print(f"[Router-Upload] ERROR contacting validation endpoint: {e}")
+            print(f"[Router-Upload] ERROR contacting validation endpoint for chunk {chunk_index}: {e}")
             start = end
             chunk_index += 1
             continue
 
         if not val_json.get("valid", False):
             print(
-                f"[Router-Upload] Validation FAILED for upload NON-SPEECH chunk | "
-                f"chunk_index={chunk_index}. Skipping model classification."
+                f"[Router-Upload] Validation FAILED for NON-SPEECH chunk {chunk_index}. "
+                f"Skipping model classification."
             )
             start = end
             chunk_index += 1
             continue
 
-        print(
-            f"[Router-Upload] Validation PASSED for upload NON-SPEECH chunk | "
-            f"chunk_index={chunk_index}. Sending to model endpoint."
-        )
+        print(f"[Router-Upload] Validation PASSED for chunk {chunk_index} — sending to MODEL endpoint.")
 
-        # ---- Call model endpoint ----
+        # MODEL ENDPOINT CALL
         try:
             buffer.seek(0)
+            print(f"[Router-Upload] Sending chunk {chunk_index} to CNN model endpoint...")
             model_resp = requests.post(
                 MODEL_URL,
                 files={"audio": ("upload_nonspeech.wav", buffer, "audio/wav")},
                 data={
-                    "recording_id": "upload",    # dummy id; SessionManager not used
+                    "recording_id": "upload",
                     "clip_index": chunk_index,
-                    "is_last_clip": "false",     # uploads don't use live "last clip" semantics
+                    "is_last_clip": "false",
                 },
             )
             model_json = model_resp.json()
+            print(f"[Router-Upload] Model endpoint response for chunk {chunk_index}: {model_json}")
         except Exception as e:
-            print(f"[Router-Upload] ERROR contacting model endpoint: {e}")
+            print(f"[Router-Upload] ERROR contacting model endpoint for chunk {chunk_index}: {e}")
             start = end
             chunk_index += 1
             continue
 
+        # Extract prediction + confidence
         prediction = model_json.get("prediction")
-        confidence = model_json.get("confidence")  # NOTE: this is already in percent (0–100)
+        confidence = model_json.get("confidence")
 
+        # Store result
         chunk_results.append({
             "index": chunk_index,
             "prediction": prediction,
@@ -392,38 +406,57 @@ def classify_nonspeech_for_upload(waveform, sample_rate: int = 16000):
         })
 
         print(
-            f"[Router-Upload] Model result for chunk {chunk_index} | "
+            f"[Router-Upload] Model result stored for chunk {chunk_index} | "
             f"prediction={prediction}, confidence={confidence}"
         )
 
+        # Advance chunk window
         start = end
         chunk_index += 1
 
+    # FINAL SUMMARY LOG
     print(
         f"[Router-Upload] Completed NON-SPEECH classification for upload | "
-        f"num_valid_chunks={len(chunk_results)}"
+        f"valid_chunks={len(chunk_results)} | total_chunks={chunk_index}"
     )
+    print("=" * 70 + "\n")
+
     return chunk_results
+
 
 def run_gemini_for_upload(recording_id: str, transcription_text: str, nonspeech_results: list):
     """
     Run Gemini analysis for the upload workflow, WITHOUT SessionManager.
-
     """
-    # Lazy import 
+
+    # Lazy import
     from routes.gemini_analysis import _run_gemini_analysis
 
+    print("\n" + "=" * 70)
+    print("[Gemini-Upload] BEGIN GEMINI ANALYSIS (UPLOAD WORKFLOW)")
+    print(f"[Gemini-Upload] recording_id={recording_id}")
+
+    # Readiness / Context Flags 
     transcription_completed = transcription_text is not None
     has_transcription_text = bool(transcription_text and str(transcription_text).strip())
     has_model_results = bool(nonspeech_results)
-    finished = True  # Upload analysis is always a one-shot, fully finished request
+    finished = True  # Upload analysis is always "finished" immediately
 
-    # ZERO-CONTEXT CASE: match Level 1 behavior from gemini_check_or_analyze
+    print("[Gemini-Upload] CONTEXT FLAGS:")
+    print(f"[Gemini-Upload] transcription_completed={transcription_completed}")
+    print(f"[Gemini-Upload] has_transcription_text={has_transcription_text}")
+    print(f"[Gemini-Upload] has_model_results={has_model_results}")
+    print(f"[Gemini-Upload] finished={finished}")
+
+    # ------------------------------------------------------------
+    # ZERO-CONTEXT CASE: matches Level 1 behavior in gemini_check_or_analyze
+    # ------------------------------------------------------------
     if transcription_completed and not has_transcription_text and not has_model_results:
         print(
             f"[Gemini-Upload] NOT ENOUGH CONTEXT | recording_id={recording_id} | "
             f"empty transcript AND no model results."
         )
+        print("=" * 70 + "\n")
         return {
             "recording_id": recording_id,
             "status": "not_enough_context",
@@ -437,8 +470,9 @@ def run_gemini_for_upload(recording_id: str, transcription_text: str, nonspeech_
             "finished": finished,
         }
 
-    # Prepare CNN results object, including a default entry if no detections
+    # CNN RESULTS OBJECT PREP
     if not nonspeech_results:
+        print("[Gemini-Upload] No CNN results detected — constructing default none_detected entry.")
         cnn_results_obj = [{
             "class": "none_detected",
             "confidence": 0.0,
@@ -450,35 +484,49 @@ def run_gemini_for_upload(recording_id: str, transcription_text: str, nonspeech_
         }]
         num_model_results = 0
     else:
+        print(f"[Gemini-Upload] Received {len(nonspeech_results)} CNN detection(s).")
         cnn_results_obj = nonspeech_results
         num_model_results = len(nonspeech_results)
 
+    # PRE-GEMINI INVOCATION LOGS 
+    transcript_len = len(transcription_text or "")
+    print("[Gemini-Upload] Preparing to invoke Gemini analysis...")
+    print(f"[Gemini-Upload] Transcript length={transcript_len} characters")
+    print(f"[Gemini-Upload] CNN result count={num_model_results}")
+
     try:
+        # RUN GEMINI (internally logs cleaned output)
         analysis = _run_gemini_analysis(
             transcription_text=transcription_text,
             cnn_results_obj=cnn_results_obj,
         )
 
+        # Extract confidence fields
         confidence_score = analysis.get("confidence_score")
         confidence_reasoning = analysis.get("confidence_reasoning")
 
         low_confidence = None
         if isinstance(confidence_score, (int, float)):
             try:
-                score_float = float(confidence_score)
-                low_confidence = score_float < 0.4
+                score_value = float(confidence_score)
+                low_confidence = score_value < 0.4
             except (TypeError, ValueError):
                 low_confidence = None
 
+        # POST-GEMINI LOGS 
         print(
-            f"[Gemini-Upload] Analysis complete | recording_id={recording_id} | "
-            f"risk={analysis.get('risk_score')} | "
-            f"benefit={analysis.get('benefit_score')} | "
-            f"confidence_score={confidence_score} | "
+            f"[Gemini-Upload] Gemini analysis complete | recording_id={recording_id}"
+        )
+        print(
+            f"[Gemini-Upload]   risk_score={analysis.get('risk_score')} | "
+            f"benefit_score={analysis.get('benefit_score')}"
+        )
+        print(
+            f"[Gemini-Upload]   confidence_score={confidence_score} | "
             f"low_confidence={low_confidence}"
         )
 
-        # 1. Format detections in the SAME shape as live workflow (cnn_model.py)
+        # Format CNN detections same as live workflow
         if nonspeech_results:
             formatted_detections = [
                 {
@@ -490,10 +538,12 @@ def run_gemini_for_upload(recording_id: str, transcription_text: str, nonspeech_
         else:
             formatted_detections = []
 
-        # 2. Inject detections into analysis payload
         analysis["model_results"] = formatted_detections
 
-        # 3. Return full JSON
+        print("[Gemini-Upload] Gemini analysis fully completed for upload workflow")
+        print("=" * 70 + "\n")
+
+        # Return final payload
         return {
             "recording_id": recording_id,
             "status": "completed",
@@ -512,6 +562,7 @@ def run_gemini_for_upload(recording_id: str, transcription_text: str, nonspeech_
         print(
             f"[Gemini-Upload] ERROR during analysis | recording_id={recording_id} | error={e}"
         )
+        print("=" * 70 + "\n")
         return {
             "recording_id": recording_id,
             "status": "gemini_error",

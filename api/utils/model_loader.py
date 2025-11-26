@@ -313,7 +313,7 @@ def predict(
         logits = model(mel_batch)          # (1, num_classes)
         probs = torch.sigmoid(logits).squeeze(0)  # (num_classes,)
 
-    # Top class (for legacy 'prediction' + 'confidence' fields)
+    # Top class
     top_idx = int(torch.argmax(probs).item())
     top_score = float(probs[top_idx].item())
     top_class = class_names[top_idx]
