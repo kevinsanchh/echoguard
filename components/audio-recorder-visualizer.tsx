@@ -750,20 +750,18 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
         tempAudioContext.close();
         setRecordingPhase("review");
         // --- Save detection summary to localStorage ---
-        if (mlFlags.length > 0) {
-          const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
-          const newRecord = {
-            id: recordingIdRef.current,
-            date: new Date().toLocaleString(),
-            detections: mlFlags,
-            benefit_reasoning: null,
-            benefit_score: null,
-            risk_reasoning: null,
-            risk_score: null,
-          };
-          localStorage.setItem("echoguard_recordings", JSON.stringify([...existing, newRecord]));
-          console.log("Saved recording summary locally:", newRecord);
-        }
+        const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
+        const newRecord = {
+          id: recordingIdRef.current,
+          date: new Date().toLocaleString(),
+          detections: mlFlags,
+          benefit_reasoning: null,
+          benefit_score: null,
+          risk_reasoning: null,
+          risk_score: null,
+        };
+        localStorage.setItem("echoguard_recordings", JSON.stringify([...existing, newRecord]));
+        console.log("Saved recording summary locally:", newRecord);
 
         console.log(
           "stopListening: AudioBuffer decoded from converted WAV, transitioning to review."
