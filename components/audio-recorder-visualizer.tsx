@@ -58,6 +58,8 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   const [clipDurationSeconds, setClipDurationSeconds] = useState<number>(5);
   const [clipDurationMs, setClipDurationMs] = useState<number>(5000);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+  const toggleDashboard = () => setIsDashboardOpen(!isDashboardOpen);
 
   const [ffmpegLoaded, setFfmpegLoaded] = useState<boolean>(false);
   const [ffmpegLoadingMessage, setFfmpegLoadingMessage] = useState<string>("");
@@ -70,7 +72,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const [isAtBottom, setIsAtBottom] = useState(true);
- const [notEnoughContextMessage, setNotEnoughContextMessage] = useState<string | null>(null);
+  const [notEnoughContextMessage, setNotEnoughContextMessage] = useState<string | null>(null);
 
   const scrollToBottom = useCallback(() => {
     const el = mlFlagsContainerRef.current;
@@ -408,86 +410,80 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
     }
   };
 
- async function sendUploadedAudioToBackend(wavBlob: Blob) {
-  const formData = new FormData();
-  formData.append("audio", wavBlob, `uploaded_audio_${Date.now()}.wav`);
+  async function sendUploadedAudioToBackend(wavBlob: Blob) {
+    const formData = new FormData();
+    formData.append("audio", wavBlob, `uploaded_audio_${Date.now()}.wav`);
 
-  try {
-    const response = await fetch("http://localhost:8080/process/upload-audio", {
-      method: "POST",
-      body: formData,
-    });
+    try {
+      const response = await fetch("http://localhost:8080/process/upload-audio", {
+        method: "POST",
+        body: formData,
+      });
 
-    if (!response.ok) {
-      const txt = await response.text();
-      console.error("Upload-Audio backend error:", txt);
-      throw new Error("Upload audio pipeline failed.");
+      if (!response.ok) {
+        const txt = await response.text();
+        console.error("Upload-Audio backend error:", txt);
+        throw new Error("Upload audio pipeline failed.");
+      }
+
+      const responseData = await response.json();
+      console.log("Upload-Audio backend JSON:", responseData);
+
+      // CASE 1: Not enough context
+      if (responseData.status === "not_enough_context") {
+        console.warn("Upload workflow returned NOT ENOUGH CONTEXT.");
+
+        // Popup
+        setNotEnoughContextMessage(
+          responseData.message || "No meaningful speech or environmental audio was detected."
+        );
+
+        // Tell caller to abort
+        return { ...responseData, __notEnoughContext: true };
+      }
+
+      // CASE 2: Normal upload processing
+      const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
+
+      const safeModelResults =
+        responseData.analysis && Array.isArray(responseData.analysis.model_results)
+          ? responseData.analysis.model_results.map((det: any) => ({
+              label: det.class,
+              confidence: det.confidence,
+            }))
+          : [];
+
+      const newEntry = {
+        id: responseData.recording_id,
+        date: new Date().toLocaleString(),
+
+        has_transcription: responseData.has_transcription ?? true,
+        has_model_results: responseData.has_model_results ?? true,
+        num_model_results: responseData.num_model_results ?? 0,
+
+        benefit_reasoning: responseData.analysis?.benefit_reasoning ?? null,
+        benefit_score: responseData.analysis?.benefit_score ?? null,
+        risk_reasoning: responseData.analysis?.risk_reasoning ?? null,
+        risk_score: responseData.analysis?.risk_score ?? null,
+
+        confidence_score: responseData.analysis?.confidence_score ?? null,
+        confidence_reasoning: responseData.analysis?.confidence_reasoning ?? null,
+
+        not_enough_context: false,
+
+        detections: safeModelResults,
+      };
+
+      localStorage.setItem("echoguard_recordings", JSON.stringify([...existing, newEntry]));
+
+      console.log("Dashboard entry saved for upload:", newEntry);
+
+      return responseData;
+    } catch (err) {
+      console.error("Upload audio pipeline error:", err);
+      throw err;
     }
-
-    const responseData = await response.json();
-    console.log("Upload-Audio backend JSON:", responseData);
-
-    // CASE 1: Not enough context
-    if (responseData.status === "not_enough_context") {
-      console.warn("Upload workflow returned NOT ENOUGH CONTEXT.");
-
-      // Popup
-      setNotEnoughContextMessage(
-        responseData.message ||
-          "No meaningful speech or environmental audio was detected."
-      );
-
-      // Tell caller to abort
-      return { ...responseData, __notEnoughContext: true };
-    }
-
-    // CASE 2: Normal upload processing
-    const existing =
-      JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
-
-    const safeModelResults =
-      responseData.analysis &&
-      Array.isArray(responseData.analysis.model_results)
-        ? responseData.analysis.model_results.map((det: any) => ({
-            label: det.class,
-            confidence: det.confidence,
-          }))
-        : [];
-
-    const newEntry = {
-      id: responseData.recording_id,
-      date: new Date().toLocaleString(),
-
-      has_transcription: responseData.has_transcription ?? true,
-      has_model_results: responseData.has_model_results ?? true,
-      num_model_results: responseData.num_model_results ?? 0,
-
-      benefit_reasoning: responseData.analysis?.benefit_reasoning ?? null,
-      benefit_score: responseData.analysis?.benefit_score ?? null,
-      risk_reasoning: responseData.analysis?.risk_reasoning ?? null,
-      risk_score: responseData.analysis?.risk_score ?? null,
-
-      confidence_score: responseData.analysis?.confidence_score ?? null,
-      confidence_reasoning: responseData.analysis?.confidence_reasoning ?? null,
-
-      not_enough_context: false,
-
-      detections: safeModelResults,
-    };
-
-    localStorage.setItem(
-      "echoguard_recordings",
-      JSON.stringify([...existing, newEntry])
-    );
-
-    console.log("Dashboard entry saved for upload:", newEntry);
-
-    return responseData;
-  } catch (err) {
-    console.error("Upload audio pipeline error:", err);
-    throw err;
   }
-}
 
   // Drawing utilities for the canvas (moved outside useEffect for access)
   const drawLiveWaveform = (
@@ -803,87 +799,85 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   }
 
   const fetchGeminiResult = async () => {
-  if (!recordingIdRef.current) return;
+    if (!recordingIdRef.current) return;
 
-  const url = `http://localhost:8080/process/gemini_result?recording_id=${recordingIdRef.current}`;
-  console.log("Polling Gemini result:", url);
+    const url = `http://localhost:8080/process/gemini_result?recording_id=${recordingIdRef.current}`;
+    console.log("Polling Gemini result:", url);
 
-  try {
-    const response = await fetch(url);
-    const data = await response.json();
+    try {
+      const response = await fetch(url);
+      const data = await response.json();
 
-    console.log("Gemini polling response:", data);
+      console.log("Gemini polling response:", data);
 
-    // CASE 1 — Gemini successfully produced a normal result
-    if (data.status === "ready" && data.gemini_result) {
-      setGeminiResult(data.gemini_result);
-      setIsAnalyzing(false);
+      // CASE 1 — Gemini successfully produced a normal result
+      if (data.status === "ready" && data.gemini_result) {
+        setGeminiResult(data.gemini_result);
+        setIsAnalyzing(false);
 
-      // Store in localStorage
-      const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
+        // Store in localStorage
+        const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
 
-      localStorage.setItem(
-        "echoguard_recordings",
-        JSON.stringify(
-          existing.map((rec: any) =>
-            rec.id === recordingIdRef.current
-              ? {
-                  ...rec,
-                  benefit_reasoning: data.gemini_result.benefit_reasoning,
-                  benefit_score: data.gemini_result.benefit_score,
-                  risk_reasoning: data.gemini_result.risk_reasoning,
-                  risk_score: data.gemini_result.risk_score,
-                  confidence_score: data.gemini_result.confidence_score,
-                  confidence_reasoning: data.gemini_result.confidence_reasoning,
-                }
-              : rec
+        localStorage.setItem(
+          "echoguard_recordings",
+          JSON.stringify(
+            existing.map((rec: any) =>
+              rec.id === recordingIdRef.current
+                ? {
+                    ...rec,
+                    benefit_reasoning: data.gemini_result.benefit_reasoning,
+                    benefit_score: data.gemini_result.benefit_score,
+                    risk_reasoning: data.gemini_result.risk_reasoning,
+                    risk_score: data.gemini_result.risk_score,
+                    confidence_score: data.gemini_result.confidence_score,
+                    confidence_reasoning: data.gemini_result.confidence_reasoning,
+                  }
+                : rec
+            )
           )
-        )
-      );
+        );
 
-      console.log("Gemini result stored:", data.gemini_result);
-      return; // STOP POLLING
-    }
+        console.log("Gemini result stored:", data.gemini_result);
+        return; // STOP POLLING
+      }
 
-    // CASE 2: Not Enough Context
-    if (data.status === "not_enough_context") {
-      console.warn("Gemini returned NOT ENOUGH CONTEXT. Stopping polling.");
+      // CASE 2: Not Enough Context
+      if (data.status === "not_enough_context") {
+        console.warn("Gemini returned NOT ENOUGH CONTEXT. Stopping polling.");
 
-      setIsAnalyzing(false);
+        setIsAnalyzing(false);
 
-      // Show the popup modal
-      setNotEnoughContextMessage(data.message || "Gemini could not analyze this audio.");
+        // Show the popup modal
+        setNotEnoughContextMessage(data.message || "Gemini could not analyze this audio.");
 
-      // Store minimal entry so playback still works
-      const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
+        // Store minimal entry so playback still works
+        const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
 
-      localStorage.setItem(
-        "echoguard_recordings",
-        JSON.stringify(
-          existing.map((rec: any) =>
-            rec.id === recordingIdRef.current
-              ? {
-                  ...rec,
-                  not_enough_context: true,
-                  message: data.message,
-                }
-              : rec
+        localStorage.setItem(
+          "echoguard_recordings",
+          JSON.stringify(
+            existing.map((rec: any) =>
+              rec.id === recordingIdRef.current
+                ? {
+                    ...rec,
+                    not_enough_context: true,
+                    message: data.message,
+                  }
+                : rec
+            )
           )
-        )
-      );
+        );
 
-      return; // STOP POLLING
+        return; // STOP POLLING
+      }
+
+      // CASE 3: Still Waiting → Continue Polling
+      setTimeout(fetchGeminiResult, 8000);
+    } catch (err) {
+      console.error("Gemini polling error:", err);
+      setTimeout(fetchGeminiResult, 8000); // retry after error
     }
-
-    // CASE 3: Still Waiting → Continue Polling
-    setTimeout(fetchGeminiResult, 8000);
-
-  } catch (err) {
-    console.error("Gemini polling error:", err);
-    setTimeout(fetchGeminiResult, 8000); // retry after error
-  }
-};
-
+  };
 
   function discardRecording() {
     console.log("Discarding recording.");
@@ -921,74 +915,73 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
   }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-  const file = e.target.files?.[0];
-  if (!file) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  if (!ffmpegRef.current || !ffmpegLoaded) {
-    alert("FFmpeg is still loading. Please wait.");
-    return;
-  }
-
-  setRecordingPhase("converting");
-  setFfmpegLoadingMessage("Converting uploaded audio for processing...");
-
-  try {
-    // Convert to WAV using FFmpeg
-    const ext = file.name.split(".").pop() || "";
-    const inputName = `upload_input_${Date.now()}.${ext}`;
-    const outputName = `upload_output_${Date.now()}.wav`;
-
-    await ffmpegRef.current.writeFile(inputName, await fetchFile(file));
-    await ffmpegRef.current.exec(["-i", inputName, outputName]);
-
-    const data = await ffmpegRef.current.readFile(outputName);
-    const wavBlob = new Blob([(data as any).buffer], { type: "audio/wav" });
-
-    await ffmpegRef.current.deleteFile(inputName);
-    await ffmpegRef.current.deleteFile(outputName);
-
-    // Send to backend
-    const result = await sendUploadedAudioToBackend(wavBlob);
-
-    // CASE 1: NOT ENOUGH CONTEXT
-    if (result.__notEnoughContext) {
-      console.log("Aborting upload review — Not enough context.");
-
-      // Reset UI exactly like live workflow does
-      setRecordingPhase("idle");
-      setIsAnalyzing(false);
-      setMlFlags([]);
-      setFinalAudioBlob(null);
-      reviewAudioBufferRef.current = null;
-      e.target.value = "";
+    if (!ffmpegRef.current || !ffmpegLoaded) {
+      alert("FFmpeg is still loading. Please wait.");
       return;
     }
 
-    // CASE 2 — Normal Upload Workflow
-    recordingIdRef.current = result.recording_id;
+    setRecordingPhase("converting");
+    setFfmpegLoadingMessage("Converting uploaded audio for processing...");
 
-    // Load WAV in review player
-    setFinalAudioBlob(wavBlob);
+    try {
+      // Convert to WAV using FFmpeg
+      const ext = file.name.split(".").pop() || "";
+      const inputName = `upload_input_${Date.now()}.${ext}`;
+      const outputName = `upload_output_${Date.now()}.wav`;
 
-    const tempCtx = new window.AudioContext();
-    const audioBuffer = await tempCtx.decodeAudioData(await wavBlob.arrayBuffer());
-    reviewAudioBufferRef.current = audioBuffer;
-    setTotalAudioDuration(audioBuffer.duration);
-    tempCtx.close();
+      await ffmpegRef.current.writeFile(inputName, await fetchFile(file));
+      await ffmpegRef.current.exec(["-i", inputName, outputName]);
 
-    setRecordingPhase("review");
-    e.target.value = "";
+      const data = await ffmpegRef.current.readFile(outputName);
+      const wavBlob = new Blob([(data as any).buffer], { type: "audio/wav" });
 
-    console.log("Upload file processed and ready for review.");
-  } catch (err) {
-    console.error("Upload handling error:", err);
-    alert("Failed to process uploaded file.");
-    setRecordingPhase("idle");
-    reviewAudioBufferRef.current = null;
-    setFinalAudioBlob(null);
+      await ffmpegRef.current.deleteFile(inputName);
+      await ffmpegRef.current.deleteFile(outputName);
+
+      // Send to backend
+      const result = await sendUploadedAudioToBackend(wavBlob);
+
+      // CASE 1: NOT ENOUGH CONTEXT
+      if (result.__notEnoughContext) {
+        console.log("Aborting upload review — Not enough context.");
+
+        // Reset UI exactly like live workflow does
+        setRecordingPhase("idle");
+        setIsAnalyzing(false);
+        setMlFlags([]);
+        setFinalAudioBlob(null);
+        reviewAudioBufferRef.current = null;
+        e.target.value = "";
+        return;
+      }
+
+      // CASE 2 — Normal Upload Workflow
+      recordingIdRef.current = result.recording_id;
+
+      // Load WAV in review player
+      setFinalAudioBlob(wavBlob);
+
+      const tempCtx = new window.AudioContext();
+      const audioBuffer = await tempCtx.decodeAudioData(await wavBlob.arrayBuffer());
+      reviewAudioBufferRef.current = audioBuffer;
+      setTotalAudioDuration(audioBuffer.duration);
+      tempCtx.close();
+
+      setRecordingPhase("review");
+      e.target.value = "";
+
+      console.log("Upload file processed and ready for review.");
+    } catch (err) {
+      console.error("Upload handling error:", err);
+      alert("Failed to process uploaded file.");
+      setRecordingPhase("idle");
+      reviewAudioBufferRef.current = null;
+      setFinalAudioBlob(null);
+    }
   }
-}
-
 
   const togglePlayback = async () => {
     if (!finalAudioBlob || !reviewAudioBufferRef.current) {
@@ -1286,42 +1279,42 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
 
   return (
     <main className="max-w-5xl w-full">
-        <AnimatePresence>
-      {notEnoughContextMessage && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.15 }}
-          className="fixed inset-0 z-50 flex items-center justify-center 
-                    bg-black/20 backdrop-blur-[1px]"
-        >
-          {/* Modal Card */}
+      <AnimatePresence>
+        {notEnoughContextMessage && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.18, ease: 'easeOut' }}
-            className="bg-white rounded-xl shadow-lg p-6 w-[22rem]
-                      text-center border border-neutral-200"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-50 flex items-center justify-center 
+                    bg-black/20 backdrop-blur-[1px]"
           >
-            <h2 className="text-lg font-semibold mb-2">Not Enough Context</h2>
-
-            <p className="text-sm text-neutral-600 mb-4 leading-relaxed">
-              No meaningful speech or environmental audio was detected in this
-              recording. Please try recording again with more context.
-            </p>
-
-            <Button
-              className="w-full bg-neutral-900 text-white hover:bg-neutral-800"
-              onClick={() => setNotEnoughContextMessage(null)}
+            {/* Modal Card */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.18, ease: "easeOut" }}
+              className="bg-white rounded-xl shadow-lg p-6 w-[22rem]
+                      text-center border border-neutral-200"
             >
-              OK
-            </Button>
+              <h2 className="text-lg font-semibold mb-2">Not Enough Context</h2>
+
+              <p className="text-sm text-neutral-600 mb-4 leading-relaxed">
+                No meaningful speech or environmental audio was detected in this recording. Please
+                try recording again with more context.
+              </p>
+
+              <Button
+                className="w-full bg-neutral-900 text-white hover:bg-neutral-800"
+                onClick={() => setNotEnoughContextMessage(null)}
+              >
+                OK
+              </Button>
+            </motion.div>
           </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        )}
+      </AnimatePresence>
 
       <div
         className={cn(
@@ -1536,7 +1529,7 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
             </PopoverContent>
           </Popover>
           <div>
-            <DashboardDialog />
+            <DashboardDialog toggleModal={toggleDashboard} externalIsOpen={isDashboardOpen} />
           </div>
         </div>
 
@@ -1550,6 +1543,21 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
           </Link>
         </div>
       </div>
+
+      {recordingPhase === "review" &&
+        (isAnalyzing ? (
+          ""
+        ) : (
+          <div className="my-8  flex justify-center items-center">
+            <Button
+              onClick={toggleDashboard}
+              className="bg-neutral-200 border border-neutral-300 hover:bg-neutral-300 text-neutral-600 "
+            >
+              View Results
+            </Button>
+          </div>
+        ))}
+
       {/* ML Flags Display */}
       {mlFlags.length > 0 && (
         <div className="mt-8">
