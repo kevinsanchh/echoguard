@@ -518,11 +518,11 @@ def run_gemini_for_upload(recording_id: str, transcription_text: str, nonspeech_
             f"[Gemini-Upload] Gemini analysis complete | recording_id={recording_id}"
         )
         print(
-            f"[Gemini-Upload]   risk_score={analysis.get('risk_score')} | "
+            f"[Gemini-Upload] risk_score={analysis.get('risk_score')} | "
             f"benefit_score={analysis.get('benefit_score')}"
         )
         print(
-            f"[Gemini-Upload]   confidence_score={confidence_score} | "
+            f"[Gemini-Upload] confidence_score={confidence_score} | "
             f"low_confidence={low_confidence}"
         )
 
