@@ -63,6 +63,8 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
 
   const [ffmpegLoaded, setFfmpegLoaded] = useState<boolean>(false);
   const [ffmpegLoadingMessage, setFfmpegLoadingMessage] = useState<string>("");
+  const [isAbortedMessage, setIsAbortedMessage] = useState(false);
+
   // NEW: Store ML model flags (sound detections)
   const [mlFlags, setMlFlags] = useState<{ label: string; confidence: number; time: string }[]>([]);
 
@@ -168,7 +170,12 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
       const ffmpeg = new FFmpeg();
       ffmpeg.on("log", ({ message }) => {
         // console.log("[ffmpeg.wasm log]", message); // Uncomment for verbose ffmpeg logs
-        setFfmpegLoadingMessage(message);
+        if (message.includes("Aborted()")) {
+          setIsAbortedMessage(true);
+        } else {
+          setIsAbortedMessage(false);
+          setFfmpegLoadingMessage(message);
+        }
       });
       await ffmpeg.load({
         coreURL: `${baseURL}/ffmpeg-core.js`,
@@ -1335,11 +1342,22 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
           </div>
         )}
         {recordingPhase === "converting" && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10 rounded-md">
+          <div className=" absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm z-10 rounded-md">
             <Loader2 className="h-6 w-6 animate-spin mr-2" />
-            <span className="text-sm text-muted-foreground">
-              {ffmpegLoadingMessage || "Converting audio..."}
-            </span>
+            {isAbortedMessage ? (
+              <TypingAnimation
+                className="text-muted-foreground"
+                blinkCursor={true}
+                deleteSpeed={140}
+                loop
+              >
+                Analyzing audio...
+              </TypingAnimation>
+            ) : (
+              <span className="text-sm text-muted-foreground">
+                {ffmpegLoadingMessage || "Converting audio..."}
+              </span>
+            )}
           </div>
         )}
         {recordingPhase === "recording" && (
