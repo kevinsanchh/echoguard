@@ -133,12 +133,22 @@ const DashboardDialog = ({
                         .slice()
                         .reverse()
                         .map((record: any, idx: number) => {
-                          const confidence = record?.confidence_score ?? null;
+                          const rawConfidence = record?.confidence_score;
+                          const confidence =
+                            rawConfidence === undefined ||
+                            rawConfidence === null ||
+                            rawConfidence === "" ||
+                            isNaN(Number(rawConfidence))
+                              ? null
+                              : Number(rawConfidence);
+
                           const isLowConfidence =
                             typeof confidence === "number" && confidence <= 0.6;
 
                           const confidenceColor =
-                            confidence <= 0.4
+                            confidence === null
+                              ? "text-neutral-400"
+                              : confidence <= 0.4
                               ? "text-red-600"
                               : confidence <= 0.7
                               ? "text-yellow-600"
@@ -166,7 +176,7 @@ const DashboardDialog = ({
                                         className="border bg-neutral-50 border-neutral-200 rounded-md p-2"
                                       >
                                         <h1 className="text-md text-neutral-600">{det.label}</h1>
-                                        <h1 className="font-semibold text-right text-xl">
+                                        <h1 className="font-semibold text-right text-xl ">
                                           {String(det.confidence).split(".")[0]}%
                                         </h1>
                                       </div>
@@ -204,14 +214,16 @@ const DashboardDialog = ({
                                     {/* SCORE BOX → Tooltip Wrapper */}
                                     <Tooltip>
                                       <TooltipTrigger asChild>
-                                        <div className="cursor-pointer relative">
-                                          <div className="bg-green-100 border border-green-600 aspect-square items-center justify-center flex size-10 rounded-md relative">
-                                            {isLowConfidence && (
+                                        <div className="cursor-pointer relative gap-2 grid">
+                                          {isLowConfidence && (
+                                            <div className="bg-yellow-100 border text-yellow-600 border-yellow-400 items-center justify-center flex  rounded-md py-1">
                                               <AlertTriangle
-                                                size={12}
-                                                className="absolute top-1 right-1 text-yellow-500"
+                                                size={14}
+                                                className=" text-yellow-500 "
                                               />
-                                            )}
+                                            </div>
+                                          )}
+                                          <div className="bg-green-100 border border-green-600 aspect-square items-center justify-center flex size-10 rounded-md relative">
                                             <h1 className="text-green-600 text-sm font-semibold">
                                               {record.benefit_score == null
                                                 ? "N/A"
@@ -226,12 +238,13 @@ const DashboardDialog = ({
                                         className="
                                           max-w-xs p-2 text-sm
                                           bg-neutral-50 text-neutral-700
-                                          border border-neutral-200
+                                          border border-neutral-300
                                           rounded-md shadow-md
                                           whitespace-normal text-left leading-snug w-auto
+
                                         "
                                       >
-                                        <p className={`font-semibold ${confidenceColor}`}>
+                                        <p className={`font-semibold mb-1 ${confidenceColor}`}>
                                           Confidence: {confidence?.toFixed(2)}
                                         </p>
                                         <p>{firstSentenceReasoning}</p>
@@ -259,14 +272,16 @@ const DashboardDialog = ({
                                     {/* SCORE BOX → Tooltip Wrapper */}
                                     <Tooltip>
                                       <TooltipTrigger asChild>
-                                        <div className="cursor-pointer relative">
-                                          <div className="bg-red-100 border border-red-600 aspect-square items-center justify-center flex size-10 rounded-md relative">
-                                            {isLowConfidence && (
+                                        <div className="cursor-pointer relative grid gap-2">
+                                          {isLowConfidence && (
+                                            <div className="bg-yellow-100 border text-yellow-600 border-yellow-400 items-center justify-center flex  rounded-md py-1">
                                               <AlertTriangle
-                                                size={12}
-                                                className="absolute top-1 right-1 text-yellow-500"
+                                                size={14}
+                                                className=" text-yellow-500 "
                                               />
-                                            )}
+                                            </div>
+                                          )}
+                                          <div className="bg-red-100 border border-red-600 aspect-square items-center justify-center flex size-10 rounded-md relative">
                                             <h1 className="text-red-600 text-sm font-semibold">
                                               {record.risk_score == null
                                                 ? "N/A"
@@ -281,12 +296,12 @@ const DashboardDialog = ({
                                         className="
                                           max-w-xs p-2 text-sm
                                           bg-neutral-50 text-neutral-700
-                                          border border-neutral-200
+                                          border border-neutral-300
                                           rounded-md shadow-md
                                           whitespace-normal text-left leading-snug w-auto
                                         "
                                       >
-                                        <p className={`font-semibold ${confidenceColor}`}>
+                                        <p className={`font-semibold mb-1 ${confidenceColor}`}>
                                           Confidence: {confidence?.toFixed(2)}
                                         </p>
                                         <p>{firstSentenceReasoning}</p>
@@ -331,4 +346,3 @@ const DashboardDialog = ({
 };
 
 export default DashboardDialog;
-
