@@ -712,6 +712,16 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
 
     console.log("stopListening: Processing full recorded audio for frontend playback.");
 
+    console.log(
+      "[stopListening] Before processing full recording →",
+      "recordingId:",
+      recordingIdRef.current,
+      "mlFlags:",
+      mlFlags,
+      "mlFlags.length:",
+      mlFlags.length
+    );
+
     if (allRecordedChunks.current.length > 0) {
       setRecordingPhase("converting"); // New phase: show conversion progress
       setFfmpegLoadingMessage("Converting full audio (WebM to WAV) for playback...");
@@ -749,19 +759,6 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
         setTotalAudioDuration(audioBuffer.duration);
         tempAudioContext.close();
         setRecordingPhase("review");
-        // --- Save detection summary to localStorage ---
-        const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
-        const newRecord = {
-          id: recordingIdRef.current,
-          date: new Date().toLocaleString(),
-          detections: mlFlags,
-          benefit_reasoning: null,
-          benefit_score: null,
-          risk_reasoning: null,
-          risk_score: null,
-        };
-        localStorage.setItem("echoguard_recordings", JSON.stringify([...existing, newRecord]));
-        console.log("Saved recording summary locally:", newRecord);
 
         console.log(
           "stopListening: AudioBuffer decoded from converted WAV, transitioning to review."
@@ -815,34 +812,42 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
 
       console.log("Gemini polling response:", data);
 
+      console.log(
+        "[fetchGeminiResult] Status:",
+        data.status,
+        "recordingIdRef.current:",
+        recordingIdRef.current,
+        "mlFlags.length:",
+        mlFlags.length
+      );
+
       // CASE 1 — Gemini successfully produced a normal result
       if (data.status === "ready" && data.gemini_result) {
-        setGeminiResult(data.gemini_result);
-        setIsAnalyzing(false);
-
-        // Store in localStorage
+        // --- Build complete dashboard entry with Gemini reasoning ---
         const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
 
-        localStorage.setItem(
-          "echoguard_recordings",
-          JSON.stringify(
-            existing.map((rec: any) =>
-              rec.id === recordingIdRef.current
-                ? {
-                    ...rec,
-                    benefit_reasoning: data.gemini_result.benefit_reasoning,
-                    benefit_score: data.gemini_result.benefit_score,
-                    risk_reasoning: data.gemini_result.risk_reasoning,
-                    risk_score: data.gemini_result.risk_score,
-                    confidence_score: data.gemini_result.confidence_score,
-                    confidence_reasoning: data.gemini_result.confidence_reasoning,
-                  }
-                : rec
-            )
-          )
+        const newRecord = {
+          id: recordingIdRef.current,
+          date: new Date().toLocaleString(),
+          detections: mlFlags,
+          benefit_reasoning: data.gemini_result.benefit_reasoning,
+          benefit_score: data.gemini_result.benefit_score,
+          risk_reasoning: data.gemini_result.risk_reasoning,
+          risk_score: data.gemini_result.risk_score,
+          confidence_score: data.gemini_result.confidence_score,
+          confidence_reasoning: data.gemini_result.confidence_reasoning,
+        };
+
+        // Save final completed record (only once)
+        localStorage.setItem("echoguard_recordings", JSON.stringify([...existing, newRecord]));
+
+        console.log(
+          "[Gemini READY] Final stored recordings:",
+          JSON.parse(localStorage.getItem("echoguard_recordings") || "[]")
         );
 
-        console.log("Gemini result stored:", data.gemini_result);
+        setGeminiResult(data.gemini_result);
+        setIsAnalyzing(false);
         return; // STOP POLLING
       }
 
@@ -851,27 +856,13 @@ export const AudioRecorderWithVisualizer = ({ className, timerClassName }: Props
         console.warn("Gemini returned NOT ENOUGH CONTEXT. Stopping polling.");
 
         setIsAnalyzing(false);
+        console.log(
+          "[Gemini NOT_ENOUGH_CONTEXT] Skipping dashboard entry for recordingId:",
+          recordingIdRef.current
+        );
 
         // Show the popup modal
         setNotEnoughContextMessage(data.message || "Gemini could not analyze this audio.");
-
-        // Store minimal entry so playback still works
-        const existing = JSON.parse(localStorage.getItem("echoguard_recordings") || "[]");
-
-        localStorage.setItem(
-          "echoguard_recordings",
-          JSON.stringify(
-            existing.map((rec: any) =>
-              rec.id === recordingIdRef.current
-                ? {
-                    ...rec,
-                    not_enough_context: true,
-                    message: data.message,
-                  }
-                : rec
-            )
-          )
-        );
 
         return; // STOP POLLING
       }

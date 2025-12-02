@@ -116,7 +116,7 @@ const DashboardDialog = ({
                   <Accordion
                     type="single"
                     collapsible
-                    className="flex flex-col gap-4 overflow-y-scroll max-h-[36.8rem]"
+                    className="flex pb-1 flex-col gap-4 overflow-y-scroll max-h-[36.8rem]"
                   >
                     {(() => {
                       if (typeof window === "undefined") return null;
@@ -164,11 +164,17 @@ const DashboardDialog = ({
                               className="border rounded-md cursor-pointer active:scale-[0.97] duration-100 bg-white"
                             >
                               <AccordionTrigger>
-                                <div className="w-full rounded-md p-3 bg-background/80 backdrop-blur-sm">
+                                <div className="w-full  rounded-md p-3 bg-background/80 backdrop-blur-sm">
                                   <h1 className="font-semibold mb-3 border-b pb-2">
                                     Recording{" "}
                                     {format(new Date(record.date), "MMM. dd, yyyy h:mm a")}
                                   </h1>
+                                  {record.detections.length === 0 && (
+                                    <div className="col-span-3 text-neutral-500 text-center text-sm italic p-2 border border-neutral-200 rounded-md bg-neutral-50">
+                                      No environmental sounds detected.
+                                    </div>
+                                  )}
+
                                   <div className="grid grid-cols-3 gap-2">
                                     {record.detections.map((det: any, i: number) => (
                                       <div
@@ -197,7 +203,7 @@ const DashboardDialog = ({
                                   {/* ============================= */}
                                   {/* BENEFIT ROW */}
                                   {/* ============================= */}
-                                  <div className="flex flex-row mt-4 items-start justify-between">
+                                  <div className="flex flex-row mt-4 ml-2 items-start justify-between">
                                     <div className="w-full">
                                       <h1 className="text-green-900 mb-2">
                                         Benefit Score & Analysis
@@ -257,7 +263,7 @@ const DashboardDialog = ({
                                   {/* ============================= */}
                                   {/* RISK ROW */}
                                   {/* ============================= */}
-                                  <div className="flex flex-row mt-4 items-start justify-between">
+                                  <div className="flex flex-row ml-2 mt-4 items-start justify-between">
                                     <div className="w-full">
                                       <h1 className="text-red-900 mb-2">Risk Score & Analysis</h1>
                                       <div className="text-neutral-900">
