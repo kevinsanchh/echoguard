@@ -1,105 +1,139 @@
-<a href="https://demo-nextjs-with-supabase.vercel.app/">
-  <img alt="Next.js and Supabase Starter Kit - the fastest way to build apps with Next.js and Supabase" src="https://demo-nextjs-with-supabase.vercel.app/opengraph-image.png">
-  <h1 align="center">Next.js and Supabase Starter Kit</h1>
-</a>
+# EchoGuard
 
-<p align="center">
- The fastest way to build apps with Next.js and Supabase
-</p>
+EchoGuard is a real-time audio monitoring and analysis system designed to detect, classify, and analyze environmental sounds and speech. It utilizes a hybrid AI pipeline that separates audio into speech and non-speech components, processing them in parallel to provide a comprehensive context-aware risk analysis using Google's Gemini 2.5 Flash.
 
-<p align="center">
-  <a href="#features"><strong>Features</strong></a> ·
-  <a href="#demo"><strong>Demo</strong></a> ·
-  <a href="#deploy-to-vercel"><strong>Deploy to Vercel</strong></a> ·
-  <a href="#clone-and-run-locally"><strong>Clone and run locally</strong></a> ·
-  <a href="#feedback-and-issues"><strong>Feedback and issues</strong></a>
-  <a href="#more-supabase-examples"><strong>More Examples</strong></a>
-</p>
-<br/>
+## Overview
+
+The system captures audio input (either via real-time microphone recording or file upload) and processes it through a sophisticated pipeline:
+
+1.  **Voice Activity Detection (VAD):** Uses RNNoise to distinguish between human speech and environmental sounds (non-speech).
+2.  **Speech Transcription:** Speech segments are processed using `faster-whisper` to generate accurate transcripts.
+3.  **Environmental Classification:** Non-speech segments are validated and classified using a custom PyTorch-based CNN (`ImprovedResNetAudio`) to detect specific sounds (e.g., alarms, aggressive noises).
+4.  **Contextual Analysis:** The transcription and classification results are aggregated and sent to Google Gemini.
+5.  **Risk Assessment:** Gemini generates a "Risk Score," "Benefit Score," and detailed reasoning, which is displayed on the frontend dashboard.
 
 ## Features
 
-- Works across the entire [Next.js](https://nextjs.org) stack
-  - App Router
-  - Pages Router
-  - Middleware
-  - Client
-  - Server
-  - It just works!
-- supabase-ssr. A package to configure Supabase Auth to use cookies
-- Password-based authentication block installed via the [Supabase UI Library](https://supabase.com/ui/docs/nextjs/password-based-auth)
-- Styling with [Tailwind CSS](https://tailwindcss.com)
-- Components with [shadcn/ui](https://ui.shadcn.com/)
-- Optional deployment with [Supabase Vercel Integration and Vercel deploy](#deploy-your-own)
-  - Environment variables automatically assigned to Vercel project
+- **Real-time Monitoring:** Captures audio directly from the browser with visual feedback.
+- **Dual-Pipeline Processing:** Simultaneous handling of speech (transcription) and non-speech (event detection).
+- **AI-Powered Analysis:** Integrates Google Gemini 2.5 Flash to synthesize audio data into actionable insights.
+- **Custom CNN Model:** Uses a ResNet-based architecture with Squeeze-and-Excitation blocks for multi-label audio classification.
+- **Audio Validation:** Filters out low-quality or irrelevant non-speech audio to reduce false positives.
+- **Interactive Dashboard:** A Next.js-based UI that displays recording history, detected events, confidence scores, and risk analysis.
+- **File Upload Support:** Allows users to upload pre-recorded WAV files for analysis.
 
-## Demo
+## Tech Stack
 
-You can view a fully working demo at [demo-nextjs-with-supabase.vercel.app](https://demo-nextjs-with-supabase.vercel.app/).
+### Frontend
 
-## Deploy to Vercel
+- **Framework:** Next.js (React)
+- **Language:** TypeScript
+- **Styling:** Tailwind CSS
+- **Animations:** Framer Motion
+- **Icons:** Lucide React
 
-Vercel deployment will guide you through creating a Supabase account and project.
+### Backend (API)
 
-After installation of the Supabase integration, all relevant environment variables will be assigned to the project so the deployment is fully functioning.
+- **Server:** Flask (Python 3.12)
+- **Machine Learning:** PyTorch, Torchaudio
+- **Speech-to-Text:** Faster-Whisper
+- **VAD:** RNNoise (Python wrapper)
+- **LLM Integration:** Google Generative AI (Gemini)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fwith-supabase&project-name=nextjs-with-supabase&repository-name=nextjs-with-supabase&demo-title=nextjs-with-supabase&demo-description=This+starter+configures+Supabase+Auth+to+use+cookies%2C+making+the+user%27s+session+available+throughout+the+entire+Next.js+app+-+Client+Components%2C+Server+Components%2C+Route+Handlers%2C+Server+Actions+and+Middleware.&demo-url=https%3A%2F%2Fdemo-nextjs-with-supabase.vercel.app%2F&external-id=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fwith-supabase&demo-image=https%3A%2F%2Fdemo-nextjs-with-supabase.vercel.app%2Fopengraph-image.png)
+## Architecture
 
-The above will also clone the Starter kit to your GitHub, you can clone that locally and develop locally.
+The backend is organized into a modular pipeline orchestrated by a central router:
 
-If you wish to just develop locally and not deploy to Vercel, [follow the steps below](#clone-and-run-locally).
+- **/api/process/vad**: The entry point for audio chunks. Splits audio into speech and non-speech.
+- **/api/process/validate-non-speech**: Checks non-speech audio for duration, RMS amplitude, and loudness before classification.
+- **/api/process/model**: Runs the custom CNN on valid non-speech audio to detect event labels.
+- **/api/process/transcribe**: Stitches speech segments and runs the Whisper model.
+- **/api/process/gemini**: Aggregates all data and requests a final analysis from the LLM.
 
-## Clone and run locally
+## Prerequisites
 
-1. You'll first need a Supabase project which can be made [via the Supabase dashboard](https://database.new)
+- Python 3.12+
+- Node.js 18+
+- FFmpeg (Required for Torchaudio and Whisper)
+- Google Gemini API Key
 
-2. Create a Next.js app using the Supabase Starter template npx command
+## Installation
 
-   ```bash
-   npx create-next-app --example with-supabase with-supabase-app
-   ```
+### 1. Clone the Repository
 
-   ```bash
-   yarn create next-app --example with-supabase with-supabase-app
-   ```
+```bash
+git clone <repository-url>
+cd echoguard
+```
 
-   ```bash
-   pnpm create next-app --example with-supabase with-supabase-app
-   ```
+### 2. Backend Setup
 
-3. Use `cd` to change into the app's directory
+Navigate to the root directory (or API folder if separated) and install the Python dependencies.
 
-   ```bash
-   cd with-supabase-app
-   ```
+```bash
+# It is recommended to create a virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-4. Rename `.env.example` to `.env.local` and update the following:
+# Install requirements
+pip install -r requirements.txt
+```
 
-   ```
-   NEXT_PUBLIC_SUPABASE_URL=[INSERT SUPABASE PROJECT URL]
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=[INSERT SUPABASE PROJECT API ANON KEY]
-   ```
+**Note:** Ensure you have the model assets placed in the correct directory:
 
-   Both `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` can be found in [your Supabase project's API settings](https://supabase.com/dashboard/project/_?showConnect=true)
+- `api/assets/multi-label_model.pth`
+- `api/assets/dataset_train.csv`
 
-5. You can now run the Next.js local development server:
+### 3. Frontend Setup
 
-   ```bash
-   npm run dev
-   ```
+Install the Node.js dependencies.
 
-   The starter kit should now be running on [localhost:3000](http://localhost:3000/).
+```bash
+npm install
+```
 
-6. This template comes with the default shadcn/ui style initialized. If you instead want other ui.shadcn styles, delete `components.json` and [re-install shadcn/ui](https://ui.shadcn.com/docs/installation/next)
+## Configuration
 
-> Check out [the docs for Local Development](https://supabase.com/docs/guides/getting-started/local-development) to also run Supabase locally.
+Create a `.env` file in the root directory (or where your Flask server reads environment variables) with the following keys:
 
-## Feedback and issues
+```ini
+GEMINI_API_KEY=your_google_gemini_api_key
+GEMINI_STATIC_PROMPT=prompt.txt
+```
 
-Please file feedback and issues over on the [Supabase GitHub org](https://github.com/supabase/supabase/issues/new/choose).
+Ensure `prompt.txt` exists at the path resolved in `api/utils/config.py`.
 
-## More Supabase examples
+## Running the Application
 
-- [Next.js Subscription Payments Starter](https://github.com/vercel/nextjs-subscription-payments)
-- [Cookie-based Auth and the Next.js 13 App Router (free course)](https://youtube.com/playlist?list=PL5S4mPUpp4OtMhpnp93EFSo42iQ40XjbF)
-- [Supabase Auth and the Next.js App Router](https://github.com/supabase/supabase/tree/master/examples/auth/nextjs)
+### Start the Backend Server
+
+```bash
+python api/server.py
+```
+
+The server will start on `http://localhost:8080`.
+
+### Start the Frontend Client
+
+```bash
+npm run dev
+```
+
+The application will be available at `http://localhost:3000`.
+
+## Usage
+
+1.  Open the application in your browser.
+2.  Click the **Start Monitoring** button to begin real-time recording, or use the **Upload** feature for existing files.
+3.  The application will visualize the audio input.
+4.  Once recording stops, the backend processes the audio chunks.
+5.  Click the **Dashboard** button to view the results, including transcripts, detected sounds, and the AI-generated risk assessment.
+
+## Project Structure
+
+- **app/**: Next.js frontend pages and layouts.
+- **components/**: Reusable UI components (Dashboard, Audio Recorder).
+- **api/**: Flask backend.
+  - **routes/**: API endpoints for VAD, Transcription, Model, and Gemini.
+  - **utils/**: Helper logic for audio processing, validation, and session management.
+  - **assets/**: ML model weights and dataset references.
