@@ -1,105 +1,319 @@
-<a href="https://demo-nextjs-with-supabase.vercel.app/">
-  <img alt="Next.js and Supabase Starter Kit - the fastest way to build apps with Next.js and Supabase" src="https://demo-nextjs-with-supabase.vercel.app/opengraph-image.png">
-  <h1 align="center">Next.js and Supabase Starter Kit</h1>
-</a>
+# 🎧 EchoGuard
 
-<p align="center">
- The fastest way to build apps with Next.js and Supabase
-</p>
+An AI-powered audio safety analysis platform that evaluates the **risk**, **benefit**, and **overall appropriateness** of audio content by analyzing both **speech** and **environmental sounds**.  
+EchoGuard combines deep learning, speech-to-text transcription, and an intelligent Gemini-based scoring layer to help parents and guardians understand the media their children consume.
 
-<p align="center">
-  <a href="#features"><strong>Features</strong></a> ·
-  <a href="#demo"><strong>Demo</strong></a> ·
-  <a href="#deploy-to-vercel"><strong>Deploy to Vercel</strong></a> ·
-  <a href="#clone-and-run-locally"><strong>Clone and run locally</strong></a> ·
-  <a href="#feedback-and-issues"><strong>Feedback and issues</strong></a>
-  <a href="#more-supabase-examples"><strong>More Examples</strong></a>
-</p>
-<br/>
+---
 
-## Features
+## 🧭 Table of Contents
 
-- Works across the entire [Next.js](https://nextjs.org) stack
-  - App Router
-  - Pages Router
-  - Middleware
-  - Client
-  - Server
-  - It just works!
-- supabase-ssr. A package to configure Supabase Auth to use cookies
-- Password-based authentication block installed via the [Supabase UI Library](https://supabase.com/ui/docs/nextjs/password-based-auth)
-- Styling with [Tailwind CSS](https://tailwindcss.com)
-- Components with [shadcn/ui](https://ui.shadcn.com/)
-- Optional deployment with [Supabase Vercel Integration and Vercel deploy](#deploy-your-own)
-  - Environment variables automatically assigned to Vercel project
+- [Features](#-features)
+- [Tech Stack](#-tech-stack)
+- [System Architecture](#-system-architecture)
+- [Backend Pipeline](#-backend-pipeline)
+- [Frontend Application](#-frontend-application)
+- [Data Flow Lifecycle](#-data-flow-lifecycle)
+- [Project Structure](#-project-structure)
+- [Quick Start (Minimal)](#-quick-start-minimal)
+- [UI Screenshots](#-ui-screenshots)
+- [Demo & Intro Videos](#-demo--intro-videos)
+- [Contact](#-contact)
 
-## Demo
+---
 
-You can view a fully working demo at [demo-nextjs-with-supabase.vercel.app](https://demo-nextjs-with-supabase.vercel.app/).
+## 🚀 Features
 
-## Deploy to Vercel
+- Dual-pipeline audio evaluation (speech + environmental sounds)
+- **Faster-Whisper transcription** for high-accuracy speech detection  
+- **Multi-label PyTorch classifier** for hazardous/environmental sound recognition  
+- **Gemini-based scoring wrapper** generating:
+  - `risk_score`  
+  - `benefit_score`  
+  - `confidence`  
+  - `reasoning`  
+- Real-time dashboard for viewing detailed breakdowns  
+- VAD (Voice Activity Detection) for noise removal & chunk processing  
+- Fully modular backend for cleaner extensions and updates  
+- Structured directories for documentation, slides, posters, and videos  
 
-Vercel deployment will guide you through creating a Supabase account and project.
+---
 
-After installation of the Supabase integration, all relevant environment variables will be assigned to the project so the deployment is fully functioning.
+## 🛠 Tech Stack
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fwith-supabase&project-name=nextjs-with-supabase&repository-name=nextjs-with-supabase&demo-title=nextjs-with-supabase&demo-description=This+starter+configures+Supabase+Auth+to+use+cookies%2C+making+the+user%27s+session+available+throughout+the+entire+Next.js+app+-+Client+Components%2C+Server+Components%2C+Route+Handlers%2C+Server+Actions+and+Middleware.&demo-url=https%3A%2F%2Fdemo-nextjs-with-supabase.vercel.app%2F&external-id=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fwith-supabase&demo-image=https%3A%2F%2Fdemo-nextjs-with-supabase.vercel.app%2Fopengraph-image.png)
+| Component | Tools / Frameworks |
+|----------|---------------------|
+| **Frontend** | Next.js, React, Tailwind CSS |
+| **Backend API** | Flask (Python) |
+| **Speech Transcription** | Faster-Whisper |
+| **Sound Classification** | PyTorch, TorchAudio |
+| **AI Scoring** | Gemini API |
+| **Processing Tools** | FFmpeg, VAD |
+| **Other** | npm, pip, REST APIs, JSON schemas |
 
-The above will also clone the Starter kit to your GitHub, you can clone that locally and develop locally.
+---
 
-If you wish to just develop locally and not deploy to Vercel, [follow the steps below](#clone-and-run-locally).
+## 🏗 System Architecture
 
-## Clone and run locally
+> **Architecture Diagram Placeholder**  
+> `![Architecture Diagram Placeholder](docs/diagrams/architecture.png)`
 
-1. You'll first need a Supabase project which can be made [via the Supabase dashboard](https://database.new)
+EchoGuard’s architecture is divided into three major layers:
 
-2. Create a Next.js app using the Supabase Starter template npx command
+1. **Frontend (Next.js)**  
+   - Audio upload  
+   - User interface  
+   - API request handling  
+   - Risk/benefit visualization  
 
-   ```bash
-   npx create-next-app --example with-supabase with-supabase-app
-   ```
+2. **Backend (Flask)**  
+   - VAD segmentation  
+   - Speech transcription  
+   - Sound classification  
+   - Scoring logic and Gemini evaluation  
 
-   ```bash
-   yarn create next-app --example with-supabase with-supabase-app
-   ```
+3. **Gemini AI Layer**  
+   - Interprets transcript + sound events  
+   - Produces structured JSON scoring output  
 
-   ```bash
-   pnpm create next-app --example with-supabase with-supabase-app
-   ```
+---
 
-3. Use `cd` to change into the app's directory
+## 🔌 Backend Pipeline
 
-   ```bash
-   cd with-supabase-app
-   ```
+### **1️⃣ Session Manager**
+- Creates per-run directories  
+- Stores uploaded audio, VAD chunks, transcripts, and output JSON  
 
-4. Rename `.env.example` to `.env.local` and update the following:
+### **2️⃣ Voice Activity Detection (VAD)**
+- Removes silence from the audio  
+- Splits into smaller, processable segments  
 
-   ```
-   NEXT_PUBLIC_SUPABASE_URL=[INSERT SUPABASE PROJECT URL]
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=[INSERT SUPABASE PROJECT API ANON KEY]
-   ```
+### **3️⃣ Faster-Whisper Transcription**
+- Generates high-fidelity transcript  
+- Handles multiple chunks  
+- Merges text into a structured final transcript  
 
-   Both `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` can be found in [your Supabase project's API settings](https://supabase.com/dashboard/project/_?showConnect=true)
+### **4️⃣ Environmental Sound Classification**
+- Multi-label CNN model (PyTorch)  
+- Predicts probability of 14+ sound event classes  
+- Aggregates predictions across chunks  
 
-5. You can now run the Next.js local development server:
+### **5️⃣ Gemini Risk/Benefit Scoring**
+- Combines transcript + sound events  
+- Sends structured prompt to Gemini  
+- Gemini returns:
+  ```json
+  {
+    "risk_score": 0,
+    "benefit_score": 0,
+    "confidence": 0.0,
+    "reasoning": "..."
+  }
+  ```
 
-   ```bash
-   npm run dev
-   ```
+### **6️⃣ Final Output Assembly**
+- Combines all results  
+- Sends JSON response back to the frontend dashboard  
 
-   The starter kit should now be running on [localhost:3000](http://localhost:3000/).
+---
 
-6. This template comes with the default shadcn/ui style initialized. If you instead want other ui.shadcn styles, delete `components.json` and [re-install shadcn/ui](https://ui.shadcn.com/docs/installation/next)
+## 🖥 Frontend Application
 
-> Check out [the docs for Local Development](https://supabase.com/docs/guides/getting-started/local-development) to also run Supabase locally.
+The frontend is built with **Next.js + Tailwind CSS** and includes:
 
-## Feedback and issues
+- **Audio Upload Page**  
+- **Real-time Processing Indicator**  
+- **Risk/Benefit Score Display**  
+- **Transcript Viewer**  
+- **Detected Sound Events Summary**  
+- **Gemini Explanation Modal**  
 
-Please file feedback and issues over on the [Supabase GitHub org](https://github.com/supabase/supabase/issues/new/choose).
+Data is retrieved from Flask via REST endpoints and displayed through dynamic React components.
 
-## More Supabase examples
+---
 
-- [Next.js Subscription Payments Starter](https://github.com/vercel/nextjs-subscription-payments)
-- [Cookie-based Auth and the Next.js 13 App Router (free course)](https://youtube.com/playlist?list=PL5S4mPUpp4OtMhpnp93EFSo42iQ40XjbF)
-- [Supabase Auth and the Next.js App Router](https://github.com/supabase/supabase/tree/master/examples/auth/nextjs)
+## 🔄 Data Flow Lifecycle
+
+EchoGuard supports **two distinct processing workflows** depending on how the user provides audio input:  
+1. A **Live Recording Workflow** for real-time detection  
+2. An **Upload Audio File Workflow** for batch processing of pre-existing audio  
+
+Both workflows ultimately converge into the Gemini scoring pipeline but differ in how and when audio is processed.
+
+---
+
+### 🎙️ Live Recording Workflow  
+When using the live recording feature, EchoGuard processes audio **in real time**. The recording is split into 5-second chunks that are sent to the backend as soon as they are captured, enabling immediate environmental sound detection while the user is still recording.
+
+> **Live Recording Workflow Diagram Placeholder**  
+> `![Live Recording Workflow Diagram](docs/diagrams/live_recording_workflow.png)`
+
+1. User records live audio  
+2. Backend stores raw WAV file  
+3. VAD splits into speech and non-speech segments  
+4. Non-speech segments sent to validation/non-speech endpoint in real time  
+5. All validated non-speech segments reach the CNN classifier  
+6. CNN analyzes segments and sends **live environmental sound detections** back to the frontend  
+   - *(Steps 1–6 repeat for each 5-second subclip)*  
+7. Once the user finishes recording, **all stored 5-second WAV files** are sent for transcription  
+8. Full transcript + CNN model results from all subclips are sent to **Gemini 2.5 Pro**  
+9. Gemini produces risk, benefit, and confidence scores along with reasoning  
+10. Backend returns structured JSON output  
+11. Frontend renders all final results in the dashboard  
+
+---
+
+### 📁 Upload Audio File Workflow  
+When uploading an existing audio file, the entire clip is processed **at once**. VAD identifies all speech vs. non-speech segments, which are then fed into the transcription module and sound classification model simultaneously.
+
+> **Upload Workflow Diagram Placeholder**  
+> `![Upload Workflow Diagram](docs/diagrams/upload_workflow.png)`
+
+1. User uploads an existing audio file  
+2. Backend stores the full raw WAV file in a session directory  
+3. VAD analyzes the entire file and splits it into **speech** and **non-speech** segments  
+4. **All non-speech segments** are sent to the CNN classifier for batch sound-event inference  
+5. **All raw WAV files** are sent to Faster-Whisper for full transcription  
+6. Backend aggregates:  
+   - Complete transcript  
+   - CNN predictions across all non-speech segments  
+7. Combined transcript + sound classification results are sent to **Gemini 2.5 Pro** in one scoring request  
+8. Gemini returns structured JSON containing risk, benefit, confidence, and reasoning  
+9. Backend assembles unified output into the standard EchoGuard response format  
+10. Frontend displays the complete evaluation in the dashboard  
+
+---
+
+
+## 📁 Project Structure
+
+### **Frontend (Next.js)**
+
+| Path | Purpose |
+|------|---------|
+| `app/` | Main application routes |
+| `components/` | Reusable React components |
+| `styles/` | Global CSS & Tailwind layers |
+| `public/` | Static assets |
+| `lib/` | API utilities & helpers |
+| `hooks/` | Custom React hooks |
+
+### **Backend (Flask)**
+
+| Path | Purpose |
+|------|---------|
+| `server/app.py` | Flask entrypoint |
+| `server/routes/` | API endpoints |
+| `server/transcription/` | Faster-Whisper logic |
+| `server/sound_classification/` | PyTorch model + inference |
+| `server/gemini/` | Scoring wrapper logic |
+| `server/vad/` | VAD utilities |
+| `server/utils/` | Helper utilities |
+| `server/sessions/` | Temporary session folders |
+
+### **Documentation/Media Directories**
+
+| Directory | Content |
+|-----------|---------|
+| `docs/` | Architecture diagrams, documentation |
+| `posters/` | Capstone poster files |
+| `slides/` | Presentation slide decks |
+| `videos/` | Demo & intro video files |
+| `screenshots/` | UI screenshots for README |
+
+---
+
+## 🚀 Quick Start
+
+Before cloning, create your own copy of the project by **forking** the repository.
+
+### 1️⃣ Fork the Repository
+Visit the GitHub repository and click **Fork** to create your own copy under your account:
+```
+https://github.com/your-username/echoguard
+```
+
+### 2️⃣ Clone Your Fork
+```bash
+git clone https://github.com/your-username/echoguard.git
+cd echoguard
+```
+
+---
+
+### 3️⃣ Backend Setup (Flask)
+```bash
+cd api
+pip install -r requirements.txt
+python server.py
+```
+
+- Backend will run at:  
+  ```
+  http://localhost:8080
+  ```
+
+---
+
+### 4️⃣ Frontend Setup (Next.js)
+```bash
+Inside the root directory:
+npm install
+npm run dev
+```
+
+- Frontend will run at:  
+  ```
+  http://localhost:3000
+  ```
+
+---
+
+### ✔ Summary
+- Fork → Clone → Install backend dependencies → Install frontend dependencies  
+- Run backend and frontend in parallel  
+- Access the UI through `localhost:3000`  
+
+---
+
+## 🖼 UI Screenshots
+
+> Replace these placeholders with your actual UI images.
+
+### Dashboard  
+`![Dashboard Screenshot](docs/screenshots/dashboard.png)`
+
+### Upload Page  
+`![Upload Screenshot](docs/screenshots/upload.png)`
+
+### Result Panel  
+`![Results Screenshot](docs/screenshots/results.png)`
+
+### Transcript View  
+`![Transcript Screenshot](docs/screenshots/transcript.png)`
+
+---
+
+## 🎬 Demo & Intro Videos
+
+> Replace placeholders with your actual YouTube links.
+
+- **Intro Video:**  
+  https://youtube.com/placeholder_intro
+
+- **Demo Video:**  
+  https://youtube.com/placeholder_demo
+
+- **Full Walkthrough:**  
+  https://youtube.com/placeholder_full
+
+---
+
+## 📬 Contact
+
+For questions or contributions:
+
+- **GitHub:** https://github.com/abner577  
+- **Email:** abner07282005@gmail.com  
+- **LinkedIn:** https://linkedin.com/in/abner-rodriguez  
+
+---
