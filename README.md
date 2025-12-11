@@ -25,14 +25,16 @@ EchoGuard combines deep learning, speech-to-text transcription, and an intellige
 
 - Dual-pipeline audio evaluation (speech + environmental sounds)
 - **Faster-Whisper transcription** for high-accuracy speech detection  
-- **Multi-label PyTorch classifier** for hazardous/environmental sound recognition  
-- **Gemini-based scoring wrapper** generating:
+- **Multi-label PyTorch CNN classifier** for hazardous/environmental sound recognition  
+- **Gemini-based scoring via Gemini 2.5 Pro Model** generating:
   - `risk_score`  
   - `benefit_score`  
-  - `confidence`  
-  - `reasoning`  
+  - `confidence_score`  
+  - `risk_reasoning`  
+  - `benefit_reasoning`  
+  - `confidence_reasoning`  
 - Real-time dashboard for viewing detailed breakdowns  
-- VAD (Voice Activity Detection) for noise removal & chunk processing  
+- VAD (Voice Activity Detection) to split raw WAV files into non-speech and speech segments
 - Fully modular backend for cleaner extensions and updates  
 - Structured directories for documentation, slides, posters, and videos  
 
@@ -45,10 +47,10 @@ EchoGuard combines deep learning, speech-to-text transcription, and an intellige
 | **Frontend** | Next.js, React, Tailwind CSS |
 | **Backend API** | Flask (Python) |
 | **Speech Transcription** | Faster-Whisper |
-| **Sound Classification** | PyTorch, TorchAudio |
-| **AI Scoring** | Gemini API |
+| **Violent Environmental Sound Classification** | CNN Model, PyTorch, TorchAudio |
+| **AI Scoring** | Gemini 2.5 Pro Model |
 | **Processing Tools** | FFmpeg, VAD |
-| **Other** | npm, pip, REST APIs, JSON schemas |
+| **Other** | npm, pip, REST APIs |
 
 ---
 
@@ -63,7 +65,7 @@ EchoGuard’s architecture is divided into three major layers:
    - Audio upload  
    - User interface  
    - API request handling  
-   - Risk/benefit visualization  
+   - Risk/benefit/confidence visualization  
 
 2. **Backend (Flask)**  
    - VAD segmentation  
@@ -71,7 +73,7 @@ EchoGuard’s architecture is divided into three major layers:
    - Sound classification  
    - Scoring logic and Gemini evaluation  
 
-3. **Gemini AI Layer**  
+3. **Gemini 2.5 Pro**  
    - Interprets transcript + sound events  
    - Produces structured JSON scoring output  
 
@@ -84,12 +86,11 @@ EchoGuard’s architecture is divided into three major layers:
 - Stores uploaded audio, VAD chunks, transcripts, and output JSON  
 
 ### **2️⃣ Voice Activity Detection (VAD)**
-- Removes silence from the audio  
-- Splits into smaller, processable segments  
+- Splits raw WAV files into non-speech and speech segments
+- Sends non-speech segments to validate/non-speech endpoint
 
 ### **3️⃣ Faster-Whisper Transcription**
-- Generates high-fidelity transcript  
-- Handles multiple chunks  
+- Generates transcript fopr full recording
 - Merges text into a structured final transcript  
 
 ### **4️⃣ Environmental Sound Classification**
@@ -105,8 +106,10 @@ EchoGuard’s architecture is divided into three major layers:
   {
     "risk_score": 0,
     "benefit_score": 0,
-    "confidence": 0.0,
-    "reasoning": "..."
+    "confidence_score": 0.0,
+    "risk_reasoning": "...",
+    "benefit_reasoning": "...",
+    "confidence_reasoning": "...",
   }
   ```
 
@@ -120,11 +123,11 @@ EchoGuard’s architecture is divided into three major layers:
 
 The frontend is built with **Next.js + Tailwind CSS** and includes:
 
+- **Home Page**  
 - **Audio Upload Page**  
 - **Real-time Processing Indicator**  
-- **Risk/Benefit Score Display**  
-- **Transcript Viewer**  
-- **Detected Sound Events Summary**  
+- **Risk/Benefit Score Display**   
+- **Detected Sound Events**  
 - **Gemini Explanation Modal**  
 
 Data is retrieved from Flask via REST endpoints and displayed through dynamic React components.
@@ -135,7 +138,7 @@ Data is retrieved from Flask via REST endpoints and displayed through dynamic Re
 
 EchoGuard supports **two distinct processing workflows** depending on how the user provides audio input:  
 1. A **Live Recording Workflow** for real-time detection  
-2. An **Upload Audio File Workflow** for batch processing of pre-existing audio  
+2. An **Upload Audio File Workflow** for batch processing of pre-existing audio files
 
 Both workflows ultimately converge into the Gemini scoring pipeline but differ in how and when audio is processed.
 
@@ -171,14 +174,15 @@ When uploading an existing audio file, the entire clip is processed **at once**.
 1. User uploads an existing audio file  
 2. Backend stores the full raw WAV file in a session directory  
 3. VAD analyzes the entire file and splits it into **speech** and **non-speech** segments  
-4. **All non-speech segments** are sent to the CNN classifier for batch sound-event inference  
+4. **All non-speech segments** are sent to the validation/non-speech endpoint
+5. **All validated non-speech segments** are sent to the CNN Model Classifier
 5. **All raw WAV files** are sent to Faster-Whisper for full transcription  
 6. Backend aggregates:  
    - Complete transcript  
    - CNN predictions across all non-speech segments  
 7. Combined transcript + sound classification results are sent to **Gemini 2.5 Pro** in one scoring request  
-8. Gemini returns structured JSON containing risk, benefit, confidence, and reasoning  
-9. Backend assembles unified output into the standard EchoGuard response format  
+8. Gemini returns structured JSON containing risk, benefit, confidence, and reasoning for each
+9. Backend assembles unified output
 10. Frontend displays the complete evaluation in the dashboard  
 
 ---
@@ -201,14 +205,12 @@ When uploading an existing audio file, the entire clip is processed **at once**.
 
 | Path | Purpose |
 |------|---------|
-| `server/app.py` | Flask entrypoint |
-| `server/routes/` | API endpoints |
-| `server/transcription/` | Faster-Whisper logic |
-| `server/sound_classification/` | PyTorch model + inference |
-| `server/gemini/` | Scoring wrapper logic |
-| `server/vad/` | VAD utilities |
-| `server/utils/` | Helper utilities |
-| `server/sessions/` | Temporary session folders |
+| `api/server.py` | Flask entrypoint |
+| `api/routes/` | API endpoints |
+| `api/utils/` | Utilities and helper functions used inside routes |
+| `api/routes/transcribe/` | Faster-Whisper Transcription logic |
+| `api/routes/cnn_model/` | CNN model + inference |
+| `api/routes/gemini_analysis` | Scoring wrapper logic |
 
 ### **Documentation/Media Directories**
 
