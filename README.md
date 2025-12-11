@@ -292,7 +292,7 @@ npm run dev
 ![Playback feature + View Results Button](screenshots/playback_and_view_results.png)
 
 ### Not Enough Context Message
-![Not Enough Context Message](screenshots/playback_and_view_results.png)
+![Not Enough Context Message](screenshots/not_enough_context_message.png)
 
 ### Dashboard (High Confidence score)
 ![Dashboard (High Confidence score)](screenshots/dashboard_high_confidence.png)
