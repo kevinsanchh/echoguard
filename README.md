@@ -144,6 +144,7 @@ Both workflows ultimately converge into the Gemini scoring pipeline but differ i
 ### 🎙️ Live Recording Workflow  
 When using the live recording feature, EchoGuard processes audio **in real time**. The recording is split into 5-second chunks that are sent to the backend as soon as they are captured, enabling immediate environmental sound detection while the user is still recording.
 
+### Live Recording Diagram
 > ![Live Recording Workflow Diagram](diagrams/echoguard_live_recording_workflow.png)
 
 1. User records live audio  
@@ -164,7 +165,8 @@ When using the live recording feature, EchoGuard processes audio **in real time*
 ### 📁 Upload Audio File Workflow  
 When uploading an existing audio file, the entire clip is processed **at once**. VAD identifies all speech vs. non-speech segments, which are then fed into the transcription module and sound classification model simultaneously.
 
-> ![Live Recording Workflow Diagram](diagrams/echoguard_upload_audio_file_workflow)
+### Upload Audio File Diagram
+> ![Upload Audio File Diagram](diagrams/echoguard_upload_audio_file_workflow.png)
 
 1. User uploads an existing audio file  
 2. Backend stores the full raw WAV file in a session directory  
@@ -219,7 +221,7 @@ When uploading an existing audio file, the entire clip is processed **at once**.
 
 ---
 
-## 🚀 Quick Start
+## Installation Guide
 
 Before cloning, create your own copy of the project by **forking** the repository.
 
@@ -274,19 +276,32 @@ npm run dev
 
 ## 🖼 UI Screenshots
 
-> Replace these placeholders with your actual UI images.
+### Home Page  
+`![Home Page](screenshots/home_page.png)`
 
-### Dashboard  
-`![Dashboard Screenshot](docs/screenshots/dashboard.png)`
+### Buttons to record/upload Audio
+`![Buttons to record/upload Audio](screenshots/recording_buttons.png)`
 
-### Upload Page  
-`![Upload Screenshot](docs/screenshots/upload.png)`
+### Analyzing Audio Animation
+`![Analyzing Audio Animation](screenshots/analyzing_audio_animation.png)`
 
-### Result Panel  
-`![Results Screenshot](docs/screenshots/results.png)`
+### Detecting Sounds in Real time (Live Record workflow)
+`![Detecting Sounds in Real time (Live Record workflow)](screenshots/detected_sounds_in_real_time.png)`
 
-### Transcript View  
-`![Transcript Screenshot](docs/screenshots/transcript.png)`
+### Playback feature + View Results Button
+`![Playback feature + View Results Button](screenshots/playback_and_view_results.png)`
+
+### Not Enough Context Message
+`![Not Enough Context Message](screenshots/playback_and_view_results.png)`
+
+### Dashboard (High Confidence score)
+`![Dashboard (High Confidence score)](screenshots/dashboard_high_confidence.png)`
+
+### Dashboard (Low Confidence score)
+`![HDashboard (Low Confidence score)(screenshots/dashboard_low_confidence.png)`
+
+### Dashboard (No Environmental Sounds)
+`![Dashboard (No Environmental Sounds)](screenshots/dashboard_no_environmental_sounds.png)`
 
 ---
 
