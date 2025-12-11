@@ -307,13 +307,11 @@ npm run dev
 
 ## 🎬 Demo & Intro Videos
 
-> Replace placeholders with your actual YouTube links.
-
 - **Intro Video:**  
-  https://youtube.com/placeholder_intro
+  https://youtu.be/jNRVgff8B6c?si=HeSru5K6cGVu4Z7v
 
 - **Demo Video:**  
-  https://youtube.com/placeholder_demo
+  https://youtu.be/ZLmIjZMEtM4?si=_ss42A_qT_1VHEe4
 
 - **Full Walkthrough:**  
   https://youtube.com/placeholder_full
