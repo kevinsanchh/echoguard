@@ -56,9 +56,6 @@ EchoGuard combines deep learning, speech-to-text transcription, and an intellige
 
 ## 🏗 System Architecture
 
-> **Architecture Diagram Placeholder**  
-> `![Architecture Diagram Placeholder](docs/diagrams/architecture.png)`
-
 EchoGuard’s architecture is divided into three major layers:
 
 1. **Frontend (Next.js)**  
