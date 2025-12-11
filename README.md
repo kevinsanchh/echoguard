@@ -277,31 +277,31 @@ npm run dev
 ## 🖼 UI Screenshots
 
 ### Home Page  
-`![Home Page](screenshots/home_page.png)`
+![Home Page](screenshots/home_page.png)
 
 ### Buttons to record/upload Audio
-`![Buttons to record/upload Audio](screenshots/recording_buttons.png)`
+![Buttons to record/upload Audio](screenshots/recording_buttons.png)
 
 ### Analyzing Audio Animation
-`![Analyzing Audio Animation](screenshots/analyzing_audio_animation.png)`
+![Analyzing Audio Animation](screenshots/analyzing_audio_animation.png)
 
 ### Detecting Sounds in Real time (Live Record workflow)
-`![Detecting Sounds in Real time (Live Record workflow)](screenshots/detected_sounds_in_real_time.png)`
+![Detecting Sounds in Real time (Live Record workflow)](screenshots/detected_sounds_in_real_time.png)
 
 ### Playback feature + View Results Button
-`![Playback feature + View Results Button](screenshots/playback_and_view_results.png)`
+![Playback feature + View Results Button](screenshots/playback_and_view_results.png)
 
 ### Not Enough Context Message
-`![Not Enough Context Message](screenshots/playback_and_view_results.png)`
+![Not Enough Context Message](screenshots/playback_and_view_results.png)
 
 ### Dashboard (High Confidence score)
-`![Dashboard (High Confidence score)](screenshots/dashboard_high_confidence.png)`
+![Dashboard (High Confidence score)](screenshots/dashboard_high_confidence.png)
 
 ### Dashboard (Low Confidence score)
-`![HDashboard (Low Confidence score)(screenshots/dashboard_low_confidence.png)`
+![Dashboard (Low Confidence score)](screenshots/dashboard_low_confidence.png)`
 
 ### Dashboard (No Environmental Sounds)
-`![Dashboard (No Environmental Sounds)](screenshots/dashboard_no_environmental_sounds.png)`
+![Dashboard (No Environmental Sounds)](screenshots/dashboard_no_environmental_sounds.png)
 
 ---
 
