@@ -144,8 +144,7 @@ Both workflows ultimately converge into the Gemini scoring pipeline but differ i
 ### 🎙️ Live Recording Workflow  
 When using the live recording feature, EchoGuard processes audio **in real time**. The recording is split into 5-second chunks that are sent to the backend as soon as they are captured, enabling immediate environmental sound detection while the user is still recording.
 
-> **Live Recording Workflow Diagram Placeholder**  
-> `![Live Recording Workflow Diagram](docs/diagrams/live_recording_workflow.png)`
+> ![Live Recording Workflow Diagram](diagrams/echoguard_live_recording_workflow.png)
 
 1. User records live audio  
 2. Backend stores raw WAV file  
@@ -165,8 +164,7 @@ When using the live recording feature, EchoGuard processes audio **in real time*
 ### 📁 Upload Audio File Workflow  
 When uploading an existing audio file, the entire clip is processed **at once**. VAD identifies all speech vs. non-speech segments, which are then fed into the transcription module and sound classification model simultaneously.
 
-> **Upload Workflow Diagram Placeholder**  
-> `![Upload Workflow Diagram](docs/diagrams/upload_workflow.png)`
+> ![Live Recording Workflow Diagram](diagrams/echoguard_upload_audio_file_workflow)
 
 1. User uploads an existing audio file  
 2. Backend stores the full raw WAV file in a session directory  
