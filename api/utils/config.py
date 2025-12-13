@@ -8,6 +8,13 @@ from dotenv import load_dotenv
 # -----------------------
 
 # Model + class file paths
+ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
+if not ENV_PATH.exists():
+    raise RuntimeError(
+        "Missing .env file. Please create a .env file in the project root "
+        "with the required environment variables."
+    )
+
 load_dotenv()
 
 MODEL_PATH = Path("assets/multi-label_model.pth")
