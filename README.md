@@ -307,7 +307,7 @@ cd echoguard
 ```bash
 cd api
 pip install -r requirements.txt
-python server.py
+python3 server.py
 ```
 
 - Backend will run at:  
@@ -384,10 +384,17 @@ npm run dev
 
 ## 📬 Contact
 
-For questions or contributions:
+For questions, contributions, or general discussion about EchoGuard:
 
 - **GitHub:** https://github.com/abner577  
 - **Email:** abner07282005@gmail.com  
-- **LinkedIn:** https://linkedin.com/in/abner-rodriguez  
+- **LinkedIn:** https://www.linkedin.com/in/abner-rodriguez-/ 
+
+### 🔐 About the Gemini Prompt
+
+The Gemini prompt included in this repository and demonstrated in the project videos is a **placeholder version**.  
+The full production prompt is intentionally not exposed in the codebase.
+
+If you are interested in the **specific prompt logic**, design decisions, or how it was structured, feel free to reach out. I would be happy to share it with you.
 
 ---
