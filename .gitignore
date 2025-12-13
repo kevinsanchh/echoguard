@@ -55,7 +55,6 @@ instance/
 api/instance/
 **/instance/
 
-api/assets/
 api/pipeline/
 
 static_gemini_prompt.txt
