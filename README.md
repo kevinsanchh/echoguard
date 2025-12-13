@@ -221,6 +221,70 @@ When uploading an existing audio file, the entire clip is processed **at once**.
 
 ---
 
+### ⚙️ Required Configuration Setup
+
+Before starting the backend server, EchoGuard requires two configuration files.
+
+Inside the project root, you will find an `example/` directory containing:
+
+- `example_.env`
+- `example_static_gemini_prompt.txt`
+
+These files must be moved and renamed before running the backend.
+
+---
+
+#### 1️⃣ Prepare the Configuration Files
+
+From the project root:
+
+1. Move both files out of the `example/` directory into the root directory.
+2. Rename them as follows:
+
+| Example File | Rename To |
+|-------------|----------|
+| `example_.env` | `.env` |
+| `example_static_gemini_prompt.txt` | `static_gemini_prompt.txt` |
+
+After this step, your root directory should include:
+- `.env`
+- `static_gemini_prompt.txt`
+
+You may delete the `example/` directory once this is done.
+
+---
+
+#### 2️⃣ Update the `.env` File
+
+Open the `.env` file and provide **your own value** for the GEMINI_API_KEY
+
+Example:
+```.env
+GEMINI_API_KEY=your_own_gemini_api_key_here
+GEMINI_STATIC_PROMPT=static_gemini_prompt.txt
+```
+
+- **`GEMINI_API_KEY`**  
+  Must be your own valid Gemini API key. The example file intentionally leaves this blank.
+
+- **`GEMINI_STATIC_PROMPT`**  
+  Points to the static prompt file used by EchoGuard.  
+  The actual prompt content is **not included** in the repository and must be provided manually.
+
+---
+
+#### 3️⃣ Update the Static Prompt File
+
+Open `static_gemini_prompt.txt` and insert your own prompt text.
+
+> ⚠️ The original project prompt is intentionally not exposed.  
+> You must define your own Gemini prompt logic in this file for the system to function.
+
+---
+
+Once these steps are complete, you can proceed with the backend setup and start the server normally.
+
+
 ## Installation Guide
 
 Before cloning, create your own copy of the project by **forking** the repository.
