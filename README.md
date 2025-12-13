@@ -372,13 +372,16 @@ npm run dev
 ## 🎬 Demo & Intro Videos
 
 - **Intro Video:**  
-  https://youtu.be/jNRVgff8B6c?si=HeSru5K6cGVu4Z7v
+  <iframe width="560" height="315" src="https://www.youtube.com/embed/jNRVgff8B6c?si=xyPCJln9Q5QMjesf" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
 
 - **Demo Video:**  
   https://youtu.be/ZLmIjZMEtM4?si=_ss42A_qT_1VHEe4
 
-- **Full Walkthrough:**  
-  https://youtube.com/placeholder_full
+- **Installation Guide Video:**  
+  https://youtu.be/CDl6xSZhbOw
+
+- **Future Improvements Video:**  
+  https://youtu.be/meSsb-Ases4?si=JX-LOKtGeULqEe9d
 
 ---
 
