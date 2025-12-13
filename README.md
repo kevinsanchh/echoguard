@@ -216,7 +216,7 @@ When uploading an existing audio file, the entire clip is processed **at once**.
 | `docs/` | Architecture diagrams, documentation |
 | `posters/` | Capstone poster files |
 | `slides/` | Presentation slide decks |
-| `videos/` | Demo & intro video files |
+| `videos/` | index.html with links to YT videos |
 | `screenshots/` | UI screenshots for README |
 
 ---
