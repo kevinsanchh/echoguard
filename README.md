@@ -369,21 +369,40 @@ npm run dev
 
 ---
 
-## 🎬 Demo & Intro Videos
+## 🎬 EchoGuard Videos
 
-- **Intro Video:**  
-  <iframe width="560" height="315" src="https://www.youtube.com/embed/jNRVgff8B6c?si=xyPCJln9Q5QMjesf" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-
-- **Demo Video:**  
-  https://youtu.be/ZLmIjZMEtM4?si=_ss42A_qT_1VHEe4
-
-- **Installation Guide Video:**  
-  https://youtu.be/CDl6xSZhbOw
-
-- **Future Improvements Video:**  
-  https://youtu.be/meSsb-Ases4?si=JX-LOKtGeULqEe9d
+Click on any video thumbnail below to watch it on YouTube.
 
 ---
+
+### 🎧 Intro Video  
+Introduces the EchoGuard software solution, motivation, and overall system goals.
+
+[![EchoGuard Intro Video](https://img.youtube.com/vi/jNRVgff8B6c/0.jpg)](https://www.youtube.com/watch?v=jNRVgff8B6c)
+
+---
+
+### 📘 User Guide  
+Demonstrates how each human actor interacts with EchoGuard, including live recording and upload workflows.
+
+[![EchoGuard User Guide](https://img.youtube.com/vi/ZLmIjZMEtM4/0.jpg)](https://www.youtube.com/watch?v=ZLmIjZMEtM4)
+
+---
+
+### ⚙️ Installation Guide
+Covers project setup & .configuration
+
+[![EchoGuard Installation Guide](https://img.youtube.com/vi/CDl6xSZhbOw/0.jpg)](https://www.youtube.com/watch?v=CDl6xSZhbOw)
+
+---
+
+### 🚧 Future Improvements
+Discusses current limitations of EchoGuard and proposed future improvements.
+
+[![EchoGuard Future Improvements](https://img.youtube.com/vi/meSsb-Ases4/0.jpg)](https://www.youtube.com/watch?v=meSsb-Ases4)
+
+---
+
 
 ## 📬 Contact
 
