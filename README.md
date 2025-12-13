@@ -15,7 +15,7 @@ EchoGuard combines deep learning, speech-to-text transcription, and an intellige
 - [Data Flow Lifecycle](#-data-flow-lifecycle)
 - [Project Structure](#-project-structure)
 - [Required Configuration Setup](#-required-configuration-setup)
-- [Installation Guide](#-installation-guide)
+- [Installation Guide](#installation-guide)
 - [UI Screenshots](#-ui-screenshots)
 - [Project Videos](#-project-videos)
 - [Contact](#-contact)
@@ -222,7 +222,7 @@ When uploading an existing audio file, the entire clip is processed **at once**.
 
 ---
 
-### ⚙️ Required Configuration Setup
+## ⚙️ Required Configuration Setup
 
 Before starting the backend server, EchoGuard requires two configuration files.
 
