@@ -18,6 +18,7 @@ EchoGuard combines deep learning, speech-to-text transcription, and an intellige
 - [Installation Guide](#installation-guide)
 - [UI Screenshots](#-ui-screenshots)
 - [Project Videos](#-project-videos)
+- [Acknowledgements](#-acknowledgements)
 - [Contact](#-contact)
 
 ---
@@ -420,6 +421,7 @@ This project was developed as part of a **Capstone course** and benefited greatl
 - **Professor Christian Poellabauer**  
   Capstone Instructor / Faculty Advisor  
   GitHub: https://github.com/cpoellab
+
   Email: [cpoellab@fiu.edu]
 
 - **Shayl Griffith**  
@@ -430,11 +432,13 @@ This project was developed as part of a **Capstone course** and benefited greatl
 - **Enshi Zhang**  
   Graduate Mentor  
   GitHub: https://github.com/coolsoda
+
   Email: [ezhan004@fiu.edu]
 
 - **Rahmina Rubaiat**  
   Graduate Mentor  
   GitHub: https://github.com/RahminaRubaiat
+
   Email: [erruba005@fiu.edu]
 
 Their insights into system design, software architecture, and project execution were invaluable throughout the development process.
