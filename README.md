@@ -369,40 +369,47 @@ npm run dev
 
 ---
 
-## 🎬 EchoGuard Videos
+## 🎬 Project Videos
 
-Click on any video thumbnail below to watch it on YouTube.
+Click any video thumbnail below to watch it on YouTube.
 
 ---
 
-### 🎧 Intro Video  
+### ▶️ 🎧 Intro Video (Click to Watch on YouTube)
 Introduces the EchoGuard software solution, motivation, and overall system goals.
+
+[![Watch on YouTube](https://img.shields.io/badge/Watch%20on-YouTube-red?logo=youtube)](https://www.youtube.com/watch?v=jNRVgff8B6c)
 
 [![EchoGuard Intro Video](https://img.youtube.com/vi/jNRVgff8B6c/0.jpg)](https://www.youtube.com/watch?v=jNRVgff8B6c)
 
 ---
 
-### 📘 User Guide  
+### ▶️ 📘 User Guide (Click to Watch on YouTube)
 Demonstrates how each human actor interacts with EchoGuard, including live recording and upload workflows.
+
+[![Watch on YouTube](https://img.shields.io/badge/Watch%20on-YouTube-red?logo=youtube)](https://www.youtube.com/watch?v=ZLmIjZMEtM4)
 
 [![EchoGuard User Guide](https://img.youtube.com/vi/ZLmIjZMEtM4/0.jpg)](https://www.youtube.com/watch?v=ZLmIjZMEtM4)
 
 ---
 
-### ⚙️ Installation Guide
-Covers project setup & .configuration
+### ▶️ ⚙️ Installation & Maintenance Guide (Click to Watch on YouTube)
+Covers project setup and configuration.
+
+[![Watch on YouTube](https://img.shields.io/badge/Watch%20on-YouTube-red?logo=youtube)](https://www.youtube.com/watch?v=CDl6xSZhbOw)
 
 [![EchoGuard Installation Guide](https://img.youtube.com/vi/CDl6xSZhbOw/0.jpg)](https://www.youtube.com/watch?v=CDl6xSZhbOw)
 
 ---
 
-### 🚧 Future Improvements
-Discusses current limitations of EchoGuard and proposed future improvements.
+### ▶️ 🚀 Future Improvements (Click to Watch on YouTube)
+Discusses proposed enhancements, extensions, and future directions for EchoGuard.
+
+[![Watch on YouTube](https://img.shields.io/badge/Watch%20on-YouTube-red?logo=youtube)](https://www.youtube.com/watch?v=meSsb-Ases4)
 
 [![EchoGuard Future Improvements](https://img.youtube.com/vi/meSsb-Ases4/0.jpg)](https://www.youtube.com/watch?v=meSsb-Ases4)
 
 ---
-
 
 ## 📬 Contact
 
