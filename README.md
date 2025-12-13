@@ -412,6 +412,33 @@ Discusses proposed enhancements, extensions, and future directions for EchoGuard
 
 ---
 
+## 🙏 Acknowledgements
+
+This project was developed as part of a **Capstone course** and benefited greatly from the guidance, feedback, and support of the following individuals. Their expertise and mentorship played a key role in shaping EchoGuard’s technical direction and overall quality.
+
+### Faculty Advisors
+- **Professor Christian Poellabauer**  
+  Capstone Instructor / Faculty Advisor  
+  GitHub: https://github.com/cpoellab
+  Email: [cpoellab@fiu.edu]
+
+- **Shayl Griffith**  
+  Assistant Psychology Professor  
+  Email: [shagriff@fiu.edu]
+
+### Graduate Mentors
+- **Enshi Zhang**  
+  Graduate Mentor  
+  GitHub: https://github.com/coolsoda
+  Email: [ezhan004@fiu.edu]
+
+- **Rahmina Rubaiat**  
+  Graduate Mentor  
+  GitHub: https://github.com/RahminaRubaiat
+  Email: [erruba005@fiu.edu]
+
+Their insights into system design, software architecture, and project execution were invaluable throughout the development process.
+
 ## 📬 Contact
 
 For questions, contributions, or general discussion about EchoGuard:
