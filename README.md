@@ -14,7 +14,7 @@ EchoGuard combines deep learning, speech-to-text transcription, and an intellige
 - [Frontend Application](#-frontend-application)
 - [Data Flow Lifecycle](#-data-flow-lifecycle)
 - [Project Structure](#-project-structure)
-- [Required Configuration Setup](#-required-configuration-setup)
+- [Required Configuration Setup](#required-configuration-setup)
 - [Installation Guide](#installation-guide)
 - [UI Screenshots](#-ui-screenshots)
 - [Project Videos](#-project-videos)
